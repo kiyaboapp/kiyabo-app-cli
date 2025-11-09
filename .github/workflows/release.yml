@@ -1,0 +1,47 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - python_folder: python32
+            exe_name: kiyabo32
+            spec_file: build_32.spec
+          - python_folder: python64
+            exe_name: kiyabo64
+            spec_file: build_64.spec
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: cmd
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ${{ matrix.exe_name }}
+        run: |
+          ${{ matrix.python_folder }}\python.exe -m PyInstaller --noconfirm ${{ matrix.spec_file }}
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.exe_name }}
+          path: dist/${{ matrix.exe_name }}.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kiyabo32/kiyabo32.exe
+            kiyabo64/kiyabo64.exe

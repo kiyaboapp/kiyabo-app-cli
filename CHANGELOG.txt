@@ -1,0 +1,5 @@
+
+## v1.0.0 - 2025-11-09
+- First release
+- Upload, export, process commands
+- 32-bit + 64-bit EXEs
