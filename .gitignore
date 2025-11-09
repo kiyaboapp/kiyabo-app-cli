@@ -1,0 +1,26 @@
+# Python cache / build
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+dist/
+build/
+*.egg-info/
+
+# PyInstaller artefacts
+*.spec
+
+# Local folders you never want in git
+downloads/
+python32/
+python64/
+
+# IDE / editor junk
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+
+# OS files
+Thumbs.db
+.DS_Store
