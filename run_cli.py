@@ -1,5 +1,4 @@
 # run_cli.py  (place next to cli/, python32/, python64/)
-import os
 import sys
 import pathlib
 
