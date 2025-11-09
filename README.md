@@ -150,7 +150,7 @@ Console stays open – full color, banner, help.
 ### build_32.spec
 a = Analysis(
     ['run_cli.py'],
-    pathex=['c:\\KiyaboAppPython'],
+    pathex=[os.path.abspath(".")],
     binaries=[],
     datas=[],
     hiddenimports=[],
@@ -182,7 +182,7 @@ exe = EXE(
 ### build_64.spec
 a = Analysis(
     ['run_cli.py'],
-    pathex=['c:\\KiyaboAppPython'],
+    pathex=[os.path.abspath(".")],
     binaries=[],
     datas=[],
     hiddenimports=[],
@@ -322,7 +322,7 @@ __pycache__/
 # PyInstaller
 dist/
 build/
-*.spec
+<!-- *.spec -->
 
 # IDE
 .vscode/

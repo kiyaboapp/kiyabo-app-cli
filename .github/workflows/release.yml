@@ -3,7 +3,7 @@ name: Build & Release
 
 on:
   push:
-    tags: [ 'v*' ]          # <-- only on tags that start with v
+    tags: [ 'v*' ]
 
 jobs:
   build:
@@ -34,28 +34,65 @@ jobs:
       - name: Build ${{ matrix.name }}
         run: python -m PyInstaller --noconfirm ${{ matrix.spec }}
 
-      - name: Upload artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
           path: dist/${{ matrix.name }}.exe
 
-  release:
+  generate-notes:
     needs: build
+    runs-on: ubuntu-latest
+    outputs:
+      notes: ${{ steps.notes.outputs.notes }}
+    steps:
+      - name: Download Template
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/RELEASE_TEMPLATE.md
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          if [ -f ".github/RELEASE_TEMPLATE.md" ]; then
+            NOTES=$(cat .github/RELEASE_TEMPLATE.md)
+          else
+            NOTES="## v${{ github.ref_name }}\n\n- Automated build\n- 32-bit and 64-bit executables\n"
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+  release:
+    needs: [build, generate-notes]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - name: Download all artifacts
+      - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Create / Overwrite Release
+      - name: Compute SHA256 Hashes
+        run: |
+          cd artifacts
+          echo "## SHA256 Hashes" > hashes.txt
+          echo "\`\`\`" >> hashes.txt
+          sha256sum kiyabo32/kiyabo32.exe | awk '{print "kiyabo32.exe: " $1}' >> hashes.txt
+          sha256sum kiyabo64/kiyabo64.exe | awk '{print "kiyabo64.exe: " $1}' >> hashes.txt
+          echo "\`\`\`" >> hashes.txt
+          cat hashes.txt
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}   # e.g. v1.0.0
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          name: Kiyabo CLI ${{ github.ref_name }}
+          body: |
+            ${{ needs.generate-notes.outputs.notes }}
+
+            $(cat artifacts/hashes.txt)
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
