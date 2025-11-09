@@ -8,7 +8,7 @@ build/
 *.egg-info/
 
 # PyInstaller artefacts
-*.spec
+# *.spec
 
 # Local folders you never want in git
 downloads/
