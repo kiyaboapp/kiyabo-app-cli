@@ -1,46 +1,33 @@
-name: Build & Release
-
 on:
   push:
-    branches: [ main ]
     tags: [ 'v*' ]
-
 jobs:
   build:
     strategy:
       matrix:
         include:
-          - python_folder: python32
-            exe_name: kiyabo32
-            spec_file: build_32.spec
-          - python_folder: python64
-            exe_name: kiyabo64
-            spec_file: build_64.spec
+          - python: "3.8"; arch: "x86"; name: kiyabo32; spec: build_32.spec
+          - python: "3.8"; arch: "x64"; name: kiyabo64; spec: build_64.spec
     runs-on: windows-latest
-    defaults:
-      run:
-        shell: cmd
     steps:
       - uses: actions/checkout@v4
-      - name: Build ${{ matrix.exe_name }}
-        run: |
-          ${{ matrix.python_folder }}\python.exe -m PyInstaller --noconfirm ${{ matrix.spec_file }}
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/setup-python@v5
         with:
-          name: ${{ matrix.exe_name }}
-          path: dist/${{ matrix.exe_name }}.exe
-
+          python-version: ${{ matrix.python }}
+          architecture: ${{ matrix.arch }}
+      - run: python -m pip install pyinstaller
+      - run: python -m PyInstaller --noconfirm ${{ matrix.spec }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: dist/${{ matrix.name }}.exe
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    permissions:
-      contents: write
+    permissions: { contents: write }
     steps:
       - uses: actions/download-artifact@v4
-      - name: Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
           files: |
             kiyabo32/kiyabo32.exe
