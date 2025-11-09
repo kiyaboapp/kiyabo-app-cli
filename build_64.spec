@@ -1,12 +1,19 @@
 # -*- mode: python ; coding: utf-8 -*-
-
+#build_64.spec
 import os
+# Choose the right folder at spec-generation time
+PYTHON_FOLDER = "python32" if "32" in os.path.basename(__file__) else "python64"
+
+datas = [
+    (os.path.join(PYTHON_FOLDER, "DLLs", "*"), "DLLs"),
+    (os.path.join(PYTHON_FOLDER, "Lib", "site-packages", "*"), "Lib/site-packages")
+]
 
 a = Analysis(
     ['run_cli.py'],
     pathex=[os.path.abspath(".")],  # ← THIS LINE
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
