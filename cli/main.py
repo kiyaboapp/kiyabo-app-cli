@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import typer
-from typing import Literal
+from typing import List, Literal
 from .banner import print_banner
 from .colors import console
 
@@ -74,6 +74,7 @@ def process(
     exam_id: str = typer.Option(..., "--exam-id"),
     db_path: str = typer.Option(r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb", "--db"),
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
+    sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
 ):
     level = level.lower()
     if level == "alevel":
@@ -81,7 +82,12 @@ def process(
         console.print("[green]PROCESSING COMPLETE[/]")
     
     elif level == "olevel":
-        processor = OlevelProcessor(exam_id=exam_id, db_path=db_path)
+        if sort_cols:
+            sort_cols_list = [col.strip() for col in sort_cols.split(",")]
+        else:
+            sort_cols_list = None
+
+        processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc)
         processor.run()
         console.print("[green]PROCESSING COMPLETE[/]")
     else:

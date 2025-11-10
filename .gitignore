@@ -4,11 +4,12 @@ __pycache__/
 *.pyo
 *.pyd
 dist/
-build/
+build/Kiyabo32
+build/Kiyabo64
 *.egg-info/
 
 # PyInstaller artefacts
-# *.spec
+*.spec
 
 # Local folders you never want in git
 downloads/
