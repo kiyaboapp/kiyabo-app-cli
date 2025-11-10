@@ -6,9 +6,11 @@ from .colors import console
 
 # IMPORT ONLY WHAT EXISTS IN YOUR ORIGINAL FILES
 from .alevel.ranking import process_exam as alevel_process_exam
+from .olevel.processDS import OlevelProcessor
+from .olevel.resultImport import OlevelResultImporter
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
-from . import tester,testing
+from . import testing
 
 app = typer.Typer(
     name="kiyabo",
@@ -20,7 +22,6 @@ Level = Literal["primary", "olevel", "alevel"]
 
 @app.command()
 def test(level: Level = typer.Argument(..., help="School level")):
-    tester.main()
     testing.main()
 
 @app.command()
@@ -29,11 +30,20 @@ def upload(
     exam_id: str = typer.Option(..., "--exam-id"),
     excel_path: str = typer.Option(..., "--excel"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
+    process_after: bool = typer.Option(False, "--process", help="Process after completion")
+
 ):
     if level == "alevel":
         importer = ExamDataImporter()
         success = importer.import_exam_data(exam_id, excel_path, db_path)
         console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
+        if success and process_after:
+            process(level=level, exam_id=exam_id, db_path=db_path)
+    
+    elif level == "olevel":
+        importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path)
+        importer.run()
+        console.print("[green]UPLOAD COMPLETE[/]")
     else:
         console.print(f"[yellow]upload not implemented for {level}[/]")
 
@@ -65,8 +75,14 @@ def process(
     db_path: str = typer.Option(r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb", "--db"),
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
 ):
+    level = level.lower()
     if level == "alevel":
         alevel_process_exam(exam_id, db_path, include_INC=include_inc)
+        console.print("[green]PROCESSING COMPLETE[/]")
+    
+    elif level == "olevel":
+        processor = OlevelProcessor(exam_id=exam_id, db_path=db_path)
+        processor.run()
         console.print("[green]PROCESSING COMPLETE[/]")
     else:
         console.print(f"[yellow]process not implemented for {level}[/]")
