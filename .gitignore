@@ -4,8 +4,8 @@ __pycache__/
 *.pyo
 *.pyd
 dist/
-build/Kiyabo32
-build/Kiyabo64
+*Kiyabo32/
+*Kiyabo64/
 *.egg-info/
 
 # PyInstaller artefacts
