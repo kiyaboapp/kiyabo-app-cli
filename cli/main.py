@@ -8,6 +8,7 @@ from .colors import console
 from .alevel.ranking import process_exam as alevel_process_exam
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
+from . import tester,testing
 
 app = typer.Typer(
     name="kiyabo",
@@ -16,6 +17,11 @@ app = typer.Typer(
 )
 
 Level = Literal["primary", "olevel", "alevel"]
+
+@app.command()
+def test(level: Level = typer.Argument(..., help="School level")):
+    tester.main()
+    testing.main()
 
 @app.command()
 def upload(
