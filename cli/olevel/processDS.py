@@ -322,22 +322,20 @@ class OlevelProcessor:
                 ['ranking_points', 'avg_marks', 'subject_count_real'], 
                 ascending=[True, False, False]
             )
-            valid_students['position'] = valid_students.groupby(
-                ['ranking_points', 'avg_marks', 'subject_count_real']
-            ).ngroup() + 1
+            valid_students['position'] = valid_students[['ranking_points', 'avg_marks', 'subject_count_real']].apply(tuple, axis=1).rank(method='min', ascending=[True, False, False]).astype(int)
             valid_students['out_of'] = len(valid_students)
 
         self.df = self.df.merge(valid_students[['result_id', 'position', 'out_of']], on='result_id', how='left')
 
         print(f"\n{self.GREEN}TOP 10 RANKED STUDENTS:")
-        top_10 = valid_students[['full_name', 'points', 'avg_marks', 'position', 'division']].head(10).copy()
+        top_10 = valid_students[['full_name', 'points', 'avg_marks', 'position', 'division']].sort_values('position',ascending=True).head(10).copy()
         top_10['avg_marks'] = top_10['avg_marks'].round(2)
         top_10['No'] = range(1, 11)
         top_10 = top_10[['No', 'full_name', 'points', 'avg_marks', 'position', 'division']]
         print(tabulate(top_10, headers='keys', tablefmt='fancy_grid', showindex=False))
 
         print(f"\n{self.RED}BOTTOM 10 RANKED STUDENTS:")
-        bottom_10 = valid_students[['full_name', 'points', 'avg_marks', 'position', 'division']].tail(10).copy()
+        bottom_10 = valid_students[['full_name', 'points', 'avg_marks', 'position', 'division']].sort_values('position', ascending=False).head(10).copy()
         bottom_10['avg_marks'] = bottom_10['avg_marks'].round(2)
         bottom_10['No'] = range(1, 11)
         bottom_10 = bottom_10[['No', 'full_name', 'points', 'avg_marks', 'position', 'division']]
@@ -364,7 +362,8 @@ class OlevelProcessor:
             subject_rank_df = self.df[self.df[col].notna()].copy()
             if len(subject_rank_df) > 0:
                 subject_rank_df = subject_rank_df.sort_values(col, ascending=False)
-                subject_rank_df[f'{col}_pos'] = subject_rank_df.groupby(col).ngroup() + 1
+                # FIX: Use rank() instead of ngroup() for proper ranking with ties
+                subject_rank_df[f'{col}_pos'] = subject_rank_df[col].rank(method='min', ascending=False).astype(int)
                 subject_rank_df[f'{col}_out_of'] = len(subject_rank_df)
                 self.df = self.df.merge(
                     subject_rank_df[['result_id', f'{col}_pos', f'{col}_out_of']],
@@ -590,6 +589,97 @@ class OlevelProcessor:
         now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"\n{self.CYAN}PROCESS COMPLETED AT: {self.WHITE}{now}")
 
+
+    # -------------------------------
+    # 9.5 FINALIZE NECTA WITH AVG FROM DB
+    # -------------------------------
+    def finalize_necta_with_avg(self):
+        print(f"\n{self.GREEN}9.5 FINALIZE NECTA WITH AVG FROM DB")
+        print("=" * 60)
+
+        # Query avg_marks from DB after update_database()
+        avg_sql = """
+            SELECT result_id, avg_marks
+            FROM tbl_student_exam_results
+            WHERE exam_id = ? AND subject_count > 0
+        """
+        avg_df = pd.read_sql(avg_sql, self.conn, params=[self.EXAM_ID])
+
+        # Merge into main df
+        self.df = self.df.merge(
+            avg_df[['result_id', 'avg_marks']],
+            on='result_id', how='left', suffixes=('', '_db')
+        )
+
+        # Grade calculation function
+        def calculate_grade(mark):
+            if pd.isna(mark): 
+                return None
+            try:
+                mark_float = float(mark)
+                if mark_float >= 75: return 'A'
+                if mark_float >= 65: return 'B'
+                if mark_float >= 45: return 'C'
+                if mark_float >= 30: return 'D'
+                if mark_float >= 0: return 'F'
+                return None
+            except:
+                return None
+
+        # Calculate avg_grade for each row
+        self.df['avg_grade'] = self.df['avg_marks'].apply(calculate_grade)
+
+        # Append AVG part to existing necta_results
+        def append_avg(row):
+            base = row['necta_results']
+            if pd.isna(row['avg_marks']) or pd.isna(row['avg_grade']):
+                return base
+            
+            # Format avg_marks to 2 decimal places
+            avg_marks_formatted = f"{row['avg_marks']:.2f}"
+            return f"{base} AVG {avg_marks_formatted} -'{row['avg_grade']}'".strip()
+
+        self.df['necta_results'] = self.df.apply(append_avg, axis=1)
+
+        # Update BOTH necta_results AND avg_grade in DB
+        final_sql = """
+            UPDATE tbl_student_exam_results
+            SET necta_results = ?, avg_grade = ?
+            WHERE result_id = ?
+        """
+        
+        # Prepare all the data first - UPDATE ALL ROWS, not filtered
+        update_data = [
+            (str(row['necta_results']), str(row['avg_grade']) if not pd.isna(row['avg_grade']) else None, int(row['result_id']))
+            for _, row in self.df.iterrows()
+        ]
+        
+        # Use executemany with progress bar
+        batch_size = 1000
+        with tqdm(total=len(update_data), desc="Final NECTA Update") as pbar:
+            for i in range(0, len(update_data), batch_size):
+                batch = update_data[i:i + batch_size]
+                self.cursor.executemany(final_sql, batch)
+                pbar.update(len(batch))
+        
+        self.conn.commit()
+
+        print(f"{self.CYAN}FINAL NECTA SAMPLE (WITH AVG):")
+        final_sample = self.df[['full_name', 'necta_results', 'avg_marks', 'avg_grade']].head(22).copy()
+        final_sample['No'] = range(1, len(final_sample) + 1)
+        for i, row in final_sample.iterrows():
+            txt = row['necta_results']
+            # Trim from the END - show last 100 chars with "..." at beginning
+            if len(txt) > 80:
+                final_sample.at[i, 'necta_results'] = '...' + txt[-80:]
+            else:
+                final_sample.at[i, 'necta_results'] = txt
+            # Format avg_marks to show it's properly calculated
+            final_sample.at[i, 'avg_marks'] = f"{row['avg_marks']:.2f}" if not pd.isna(row['avg_marks']) else "N/A"
+        final_sample = final_sample[['No', 'full_name', 'avg_marks', 'avg_grade', 'necta_results']]
+        print(tabulate(final_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+
     # -------------------------------
     # MAIN EXECUTION
     # -------------------------------
@@ -605,6 +695,7 @@ class OlevelProcessor:
             self.rank_subjects()
             self.generate_necta_strings()
             success_count = self.update_database()
+            self.finalize_necta_with_avg()
             self.update_competency_analysis()
             self.generate_summary_report(success_count)
 

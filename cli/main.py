@@ -41,7 +41,7 @@ def upload(
             process(level=level, exam_id=exam_id, db_path=db_path)
     
     elif level == "olevel":
-        importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path)
+        importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path,force_import=True,process_after=process_after)
         importer.run()
         console.print("[green]UPLOAD COMPLETE[/]")
     else:
