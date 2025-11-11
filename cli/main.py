@@ -16,7 +16,7 @@ from .alevel.insert import AlevelStudentImporter
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
 from . import testing
-
+from .time_travel import TimeTravelProcessor
 app = typer.Typer(
     name="kiyabo",
     help="KIYABO APP – Tanzania School Information System",
@@ -195,6 +195,25 @@ def pip(args: List[str] = typer.Argument(None)):
     except subprocess.CalledProcessError as e:
         typer.echo(f"pip command failed with exit code {e.returncode}")
         raise typer.Exit(e.returncode)
+
+
+@app.command(name='future')
+def future_from_antique(
+    level: str = typer.Argument(..., help="School level"),
+    db_path: str = typer.Option(None, "--db"),
+):
+    """Run future_from_antique to update old Kiyabo App databases"""
+    print_banner()
+    if db_path is None:
+        raise typer.BadParameter("Database path is required", param_hint="--db")
+    
+    try:
+        space_ship = TimeTravelProcessor(level=level, db_path=db_path)
+        space_ship.into_the_future()
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+    
+
     
 
 if __name__ == "__main__":
