@@ -53,22 +53,22 @@ def main():
         
         # Build 32-bit onefile
         print("Building Kiyabo32 (onefile)...")
-        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"]
+        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo32", "--hidden-import=win32timezone", "run_cli.py"]
         subprocess.run(build_cmd)
         
         # Build 32-bit onedir
         print("Building Kiyabo32 (onedir)...")
-        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"]
+        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo32", "--hidden-import=win32timezone", "run_cli.py"]
         subprocess.run(build_cmd)
         
         # Build 64-bit onefile
         print("Building Kiyabo64 (onefile)...")
-        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"]
+        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo64", "--hidden-import=win32timezone", "run_cli.py"]
         subprocess.run(build_cmd)
         
         # Build 64-bit onedir
         print("Building Kiyabo64 (onedir)...")
-        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"]
+        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo64", "--hidden-import=win32timezone", "run_cli.py"]
         subprocess.run(build_cmd)
     else:
         # Original behavior - keep everything exactly the same
@@ -80,6 +80,7 @@ def main():
             "--clean",
             "--noconfirm",
             "--noupx",           # Disable UPX (commonly flagged)
+            "--hidden-import=win32timezone"
         ]
         
         # Build 32-bit

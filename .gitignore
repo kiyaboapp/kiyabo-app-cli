@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-dist/
+# dist/
 *Kiyabo32/
 *Kiyabo64/
 *.egg-info/

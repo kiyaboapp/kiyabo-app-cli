@@ -507,7 +507,7 @@ class StudentExamExporter:
     def _execute_query(self, sql: str, query_name: str = "query") -> List[Tuple]:
         """Execute SQL query and return results - ORIGINAL LOGIC PRESERVED"""
         print_info(f"🔄 Executing {query_name}...")
-        print(f"SQL: {sql}")
+
         try:
             rs = win32com.client.Dispatch("ADODB.Recordset")
             rs.Open(sql, self.conn, 1, 3)
