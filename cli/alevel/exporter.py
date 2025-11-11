@@ -1438,8 +1438,9 @@ class StudentExamExporter:
         results_dir = Path(r"C:\Kiyabo App\Results")
         results_dir.mkdir(parents=True, exist_ok=True)
 
-        # Generate output path
-        output_path = results_dir / f"Exam_Results_{self.exam_id}.xlsx"
+        # Generate output path with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")  # e.g., 20251111_143205
+        output_path = results_dir / f"Exam_Results_Export_{self.exam_id}_{timestamp}.xlsx"
 
         # Open Excel file
         self.open_excel_file(str(output_path), start_row=1)
