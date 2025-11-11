@@ -36,46 +36,79 @@ def main():
     parser = argparse.ArgumentParser(description='Build Kiyabo executables')
     parser.add_argument('--onefile', action='store_true', default=False,
                        help='Build as single executable file (default: False)')
+    parser.add_argument('--all', action='store_true', default=False,
+                       help='Build all 32/64 onefile and onedir versions')
     
     args = parser.parse_args()
     
-    # Clean previous builds (smarter cleaning)
-    clean_previous_builds(args.onefile)
-    
-    # Common PyInstaller arguments to reduce AV detection
-    common_args = [
-        "--clean",
-        "--noconfirm",
-        "--noupx",           # Disable UPX (commonly flagged)
-    ]
-    
-    # Build 32-bit
-    print("Building Kiyabo32...")
-    build_cmd = ["python32/python.exe", "-m", "PyInstaller"] + common_args
-    
-    if args.onefile:
-        build_cmd.append("--onefile")
-        print("  Mode: onefile")
+    if args.all:
+        # Build all 4 combinations: 32/64 onefile/onedir
+        print("Building ALL versions (32/64 onefile/onedir)...")
+        
+        # Clean everything for all build
+        if Path("build").exists():
+            shutil.rmtree("build")
+        if Path("dist").exists():
+            shutil.rmtree("dist")
+        
+        # Build 32-bit onefile
+        print("Building Kiyabo32 (onefile)...")
+        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"]
+        subprocess.run(build_cmd)
+        
+        # Build 32-bit onedir
+        print("Building Kiyabo32 (onedir)...")
+        build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"]
+        subprocess.run(build_cmd)
+        
+        # Build 64-bit onefile
+        print("Building Kiyabo64 (onefile)...")
+        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"]
+        subprocess.run(build_cmd)
+        
+        # Build 64-bit onedir
+        print("Building Kiyabo64 (onedir)...")
+        build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onedir", "--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"]
+        subprocess.run(build_cmd)
     else:
-        build_cmd.append("--onedir")
-        print("  Mode: onedir")
-    
-    build_cmd.extend(["--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"])
-    subprocess.run(build_cmd)
+        # Original behavior - keep everything exactly the same
+        # Clean previous builds (smarter cleaning)
+        clean_previous_builds(args.onefile)
+        
+        # Common PyInstaller arguments to reduce AV detection
+        common_args = [
+            "--clean",
+            "--noconfirm",
+            "--noupx",           # Disable UPX (commonly flagged)
+        ]
+        
+        # Build 32-bit
+        print("Building Kiyabo32...")
+        build_cmd = ["python32/python.exe", "-m", "PyInstaller"] + common_args
+        
+        if args.onefile:
+            build_cmd.append("--onefile")
+            print("  Mode: onefile")
+        else:
+            build_cmd.append("--onedir")
+            print("  Mode: onedir")
+        
+        build_cmd.extend(["--icon=icon.ico", "--name=Kiyabo32", "run_cli.py"])
+        subprocess.run(build_cmd)
 
-    # Build 64-bit  
-    print("Building Kiyabo64...")
-    build_cmd = ["python64/python.exe", "-m", "PyInstaller"] + common_args
-    
-    if args.onefile:
-        build_cmd.append("--onefile")
-        print("  Mode: onefile")
-    else:
-        build_cmd.append("--onedir")
-        print("  Mode: onedir")
-    
-    build_cmd.extend(["--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"])
-    subprocess.run(build_cmd)
+        # Build 64-bit  
+        print("Building Kiyabo64...")
+        build_cmd = ["python64/python.exe", "-m", "PyInstaller"] + common_args
+        
+        if args.onefile:
+            build_cmd.append("--onefile")
+            print("  Mode: onefile")
+        else:
+            build_cmd.append("--onedir")
+            print("  Mode: onedir")
+        
+        build_cmd.extend(["--icon=icon.ico", "--name=Kiyabo64", "run_cli.py"])
+        subprocess.run(build_cmd)
 
     print("DONE")
     print(f"\nBuilt executables are in: {Path('dist').absolute()}")

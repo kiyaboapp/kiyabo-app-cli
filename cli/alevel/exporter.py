@@ -348,6 +348,23 @@ class StudentExamExporter:
         self.workbook = None
         self.worksheet = None
         self.conn = None
+
+                # 🔍 Print all arguments for debugging
+        print("\n" + "=" * 80)
+        print("🎯 StudentExamExporter Initialized with Arguments:")
+        print("=" * 80)
+        for key, value in {
+            "exam_id": exam_id,
+            "db_path": db_path,
+            "include_comb_sheets": include_comb_sheets,
+            "order_by": order_by,
+            "top_n": top_n,
+            "bottom_n": bottom_n,
+            "paper_size": paper_size,
+            "orientation": orientation,
+        }.items():
+            print(f"• {key:<20}: {value}")
+        print("=" * 80 + "\n")
         
         # Validate inputs
         if self.order_by not in ["position", "name", "sex_name"]:
@@ -490,7 +507,7 @@ class StudentExamExporter:
     def _execute_query(self, sql: str, query_name: str = "query") -> List[Tuple]:
         """Execute SQL query and return results - ORIGINAL LOGIC PRESERVED"""
         print_info(f"🔄 Executing {query_name}...")
-        
+        print(f"SQL: {sql}")
         try:
             rs = win32com.client.Dispatch("ADODB.Recordset")
             rs.Open(sql, self.conn, 1, 3)
@@ -1406,6 +1423,32 @@ class StudentExamExporter:
         """Context manager exit"""
         self.close()
 
+    def run(self):
+        """
+        Execute the full export process using the current instance configuration.
+        Assumes open_excel_file() has NOT been called yet.
+        Saves output to: C:\\Kiyabo App\\Results\\Exam_Results_{exam_id}.xlsx
+        """
+        from pathlib import Path
+        import os
+
+        print_header("🚀 STARTING EXPORT VIA .run()")
+
+        # Ensure output directory exists
+        results_dir = Path(r"C:\Kiyabo App\Results")
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate output path
+        output_path = results_dir / f"Exam_Results_{self.exam_id}.xlsx"
+
+        # Open Excel file
+        self.open_excel_file(str(output_path), start_row=1)
+
+        # Perform full export (this internally handles all sheets, rankings, saving, etc.)
+        self.export_exam_results(str(output_path))
+
+        # The file is auto-opened by export_exam_results() via os.startfile()
+        return str(output_path)
 
 
 def main():

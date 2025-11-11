@@ -27,6 +27,7 @@ Level = Literal["primary", "olevel", "alevel"]
 
 @app.command()
 def test(level: Level = typer.Argument(..., help="School level")):
+    print_banner()
     testing.main()
 
 @app.command()
@@ -38,6 +39,7 @@ def upload(
     process_after: bool = typer.Option(False, "--process", help="Process after completion")
 
 ):
+    print_banner()
     if level == "alevel":
         importer = ExamDataImporter()
         success = importer.import_exam_data(exam_id, excel_path, db_path)
@@ -64,6 +66,7 @@ def import_(
 ):
     level=level.lower()
     class_id=class_id.upper()
+    print_banner()
 
     if level=="olevel":
         importer=OlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
@@ -76,23 +79,34 @@ def import_(
 
 
 
+
 @app.command()
 def export(
     level: Level = typer.Argument(..., help="School level"),
     exam_id: str = typer.Option(..., "--exam-id"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
-    include_comb: bool = typer.Option(False, "--comb"),
+    include_comb: bool = typer.Option(True, "--comb"),
     top_n: int = typer.Option(10, "--top"),
     bottom_n: int = typer.Option(10, "--bottom"),
+    order_by: str = typer.Option("position", "--order-by"),
+    paper_size: str = typer.Option("A4", "--paper-size"),
+    orientation: str = typer.Option(None, "--orientation"),
 ):
+    print_banner()
+    level = level.lower()
+
     if level == "alevel":
-        StudentExamExporter(
+        exporter=StudentExamExporter(
             exam_id=exam_id,
             db_path=db_path,
             include_comb_sheets=include_comb,
+            order_by=order_by,
             top_n=top_n,
             bottom_n=bottom_n,
+            paper_size=paper_size,
+            orientation=orientation,
         )
+        exporter.run()
         console.print("[green]EXPORT STARTED → C:\\Kiyabo App\\Results[/]")
     else:
         console.print(f"[yellow]export not implemented for {level}[/]")
@@ -133,6 +147,7 @@ def main(ctx: typer.Context):
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(file_path: str, args: List[str] = typer.Argument(None)):
     """Run a Python script with arguments"""
+    print_banner()
     script_path = Path(file_path)
     if not script_path.exists():
         typer.echo(f"Error: File {file_path} not found")
@@ -153,6 +168,7 @@ def run(file_path: str, args: List[str] = typer.Argument(None)):
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def python(args: List[str] = typer.Argument(None)):
     """Run Python commands (pip, python -m, etc.)"""
+    print_banner()
     if not args:
         # Start interactive Python if no args
         subprocess.run([sys.executable])
