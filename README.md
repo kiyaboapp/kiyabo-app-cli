@@ -66,7 +66,7 @@ kiyabo64.bat --help
 #### 32-bit
 kiyabo32.bat --help
 
-> You’ll see a colorful ASCII banner and full help.
+> You'll see a colorful ASCII banner and full help.
 
 ---
 
@@ -322,7 +322,7 @@ __pycache__/
 # PyInstaller
 dist/
 build/
-<!-- *.spec -->
+*.spec
 
 # IDE
 .vscode/
