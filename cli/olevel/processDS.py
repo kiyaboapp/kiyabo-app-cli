@@ -701,7 +701,7 @@ class OlevelProcessor:
             update_data.append(tuple(values))
 
         # Execute in batches with transaction optimization
-        batch_size = 250  # Optimal batch size for Access DB
+        batch_size = 20  # Optimal batch size for Access DB
         success_count = 0
         
         try:
@@ -804,7 +804,7 @@ class OlevelProcessor:
         ]
         
         # Execute updates in batches with progress bar
-        batch_size = 250
+        batch_size = 20  # Optimal batch size for Access DB
         with tqdm(total=len(update_data), desc="Final NECTA Update") as pbar:
             for i in range(0, len(update_data), batch_size):
                 batch = update_data[i:i + batch_size]
@@ -841,52 +841,92 @@ class OlevelProcessor:
         print("=" * 60)
         
         # Clear existing competency data for this exam
-        self.cursor.execute("DELETE FROM tbl_competency WHERE exam_id = ?", self.EXAM_ID)
+        self.cursor.execute("DELETE FROM tbl_competency WHERE exam_id = ?", (self.EXAM_ID,))
         
         def calculate_gpa(A, B, C, D, F):
             total = A + B + C + D + F
-            return (A*1 + B*2 + C*3 + D*4 + F*5) / total if total > 0 else 0.0
+            return (A*1 + B*2 + C*3 + D*4 + F*5) / total if total > 0 else None
         
         def get_competency_level(gpa):
+            if gpa is None: 
+                return "No Data"
             if gpa >= 4.6: return "Grade F (Fail)"
             if gpa >= 3.6: return "Grade D (Satisfactory)"
             if gpa >= 2.6: return "Grade C (Good)"
             if gpa >= 1.6: return "Grade B (Very Good)"
             if gpa >= 1.0: return "Grade A (Excellent)"
-            return ""
+            return "No Data"
         
         competency_data = []
+        
         for _, subject in self.subjects_df.iterrows():
             subject_id = int(subject['subject_id'])
             
             # Find corresponding column
             col_name = next(
                 (col for col, info in self.subject_column_map.items() 
-                 if info['subject_id'] == subject_id), 
+                if info['subject_id'] == subject_id), 
                 None
             )
             
             if not col_name: 
+                print(f"{self.YELLOW}Warning: No column mapping found for subject_id {subject_id}")
                 continue
             
             grade_col = f"{col_name}_grade"
-            counts = self.df[grade_col].value_counts()
             
-            A = int(counts.get('A', 0))
-            B = int(counts.get('B', 0))
-            C = int(counts.get('C', 0))
-            D = int(counts.get('D', 0))
-            F = int(counts.get('F', 0))
-            total = A + B + C + D + F
+            # Check if grade column exists and has valid data
+            if grade_col not in self.df.columns:
+                print(f"{self.YELLOW}Warning: Grade column '{grade_col}' not found for '{subject['subject_name']}'")
+                # Insert NULL record for this subject
+                self.cursor.execute("""
+                    INSERT INTO tbl_competency 
+                    (exam_id, subject_id, A_s, B_s, C_s, D_s, F_s, gpa, competency_level)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (self.EXAM_ID, subject_id, 0, 0, 0, 0, 0, None, "No Data"))
+                continue
+                
+            # Get grade counts - handle null/empty cases
+            grade_series = self.df[grade_col]
             
-            gpa = float(calculate_gpa(A, B, C, D, F))
-            level = get_competency_level(gpa)
+            # Check if all grades are null/empty
+            if grade_series.isna().all() or grade_series.empty:
+                print(f"{self.YELLOW}No valid grade data for '{subject['subject_name']}' - all null/empty")
+                A, B, C, D, F = 0, 0, 0, 0, 0
+                gpa = None
+                level = "No Data"
+            else:
+                # Count non-null grades only
+                valid_grades = grade_series.dropna()
+                if valid_grades.empty:
+                    print(f"{self.YELLOW}No valid grade data for '{subject['subject_name']}' - all dropped as null")
+                    A, B, C, D, F = 0, 0, 0, 0, 0
+                    gpa = None
+                    level = "No Data"
+                else:
+                    counts = valid_grades.value_counts()
+                    A = int(counts.get('A', 0))
+                    B = int(counts.get('B', 0))
+                    C = int(counts.get('C', 0))
+                    D = int(counts.get('D', 0))
+                    F = int(counts.get('F', 0))
+                    total = A + B + C + D + F
+
+                    # Only calculate GPA if we have valid grades
+                    if total > 0:
+                        gpa = float(calculate_gpa(A, B, C, D, F))
+                        level = get_competency_level(gpa)
+                        print(f"{self.GREEN}Processed '{subject['subject_name']}': A={A}, B={B}, C={C}, D={D}, F={F}, GPA={gpa:.4f}")
+                    else:
+                        gpa = None
+                        level = "No Data"
+                        print(f"{self.YELLOW}No valid grades for '{subject['subject_name']}' - all counts are zero")
             
             competency_data.append({
                 'No': len(competency_data) + 1,
                 'Subject': subject['subject_name'],
                 'A': A, 'B': B, 'C': C, 'D': D, 'F': F,
-                'GPA': round(gpa, 4),
+                'GPA': round(gpa, 4) if gpa is not None else "N/A",
                 'Level': level
             })
             
@@ -895,18 +935,26 @@ class OlevelProcessor:
                 INSERT INTO tbl_competency 
                 (exam_id, subject_id, A_s, B_s, C_s, D_s, F_s, gpa, competency_level)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, self.EXAM_ID, subject_id, A, B, C, D, F, gpa, level)
+            """, (self.EXAM_ID, subject_id, A, B, C, D, F, gpa, level))
         
         self.conn.commit()
         
-        print(f"{self.MAGENTA}SUBJECT COMPETENCY ANALYSIS:")
-        comp_df = pd.DataFrame(competency_data)
-        print(tabulate(
-            comp_df[['No', 'Subject', 'A', 'B', 'C', 'D', 'F', 'GPA', 'Level']].head(10),
-            headers='keys', 
-            tablefmt='fancy_grid', 
-            showindex=False
-        ))
+        if competency_data:
+            print(f"{self.MAGENTA}SUBJECT COMPETENCY ANALYSIS:")
+            comp_df = pd.DataFrame(competency_data)
+            print(tabulate(
+                comp_df[['No', 'Subject', 'A', 'B', 'C', 'D', 'F', 'GPA', 'Level']].head(15),
+                headers='keys', 
+                tablefmt='fancy_grid', 
+                showindex=False
+            ))
+            
+            # Show summary
+            valid_subjects = len([d for d in competency_data if d['GPA'] != "N/A"])
+            total_subjects = len(competency_data)
+            print(f"{self.CYAN}Summary: {valid_subjects}/{total_subjects} subjects have valid GPA data")
+        else:
+            print(f"{self.RED}No competency data was processed!")
 
     # -------------------------------
     # 11. FINAL SUMMARY REPORT
