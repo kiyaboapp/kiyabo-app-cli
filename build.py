@@ -54,7 +54,7 @@ def main():
         # Build 32-bit onefile
         print("Building Kiyabo32 (onefile)...")
         build_cmd = ["python32/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo32", "--hidden-import=win32timezone", "run_cli.py"]
-        subprocess.run(build_cmd)
+        # subprocess.run(build_cmd)
         
         # Build 32-bit onedir
         print("Building Kiyabo32 (onedir)...")
@@ -64,7 +64,7 @@ def main():
         # Build 64-bit onefile
         print("Building Kiyabo64 (onefile)...")
         build_cmd = ["python64/python.exe", "-m", "PyInstaller", "--clean", "--noconfirm", "--noupx", "--onefile", "--icon=icon.ico", "--name=Kiyabo64", "--hidden-import=win32timezone", "run_cli.py"]
-        subprocess.run(build_cmd)
+        # subprocess.run(build_cmd)
         
         # Build 64-bit onedir
         print("Building Kiyabo64 (onedir)...")
