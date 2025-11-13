@@ -12,11 +12,16 @@ from .alevel.ranking import process_exam as alevel_process_exam
 from .olevel.processDS import OlevelProcessor
 from .olevel.resultImport import OlevelResultImporter
 from .olevel.insert import OlevelStudentImporter
+
 from .alevel.insert import AlevelStudentImporter
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
+
+from .primary.insert import PrimaryPupilImporter
+
 from . import testing
 from .time_travel import TimeTravelProcessor
+
 app = typer.Typer(
     name="kiyabo",
     help="KIYABO APP – Tanzania School Information System",
@@ -71,9 +76,15 @@ def import_(
     if level=="olevel":
         importer=OlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
         importer.run()
+
     elif level=="alevel":
         importer=AlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
         importer.run()
+
+    elif level=="primary":
+        importer=PrimaryPupilImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
+        importer.run()
+        
     else:
         console.print(f"[yellow]import not implemented for {level}[/]")
 
