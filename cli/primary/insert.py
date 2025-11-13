@@ -42,7 +42,7 @@ class PrimaryPupilImporter:
     def get_class_number(class_id: str) -> int:
         # PRIMARY SCHOOL CLASS MAPPING
         mapping = {
-            "BABY": 0, "MIDDLE":1,"PRE-UNIT": 2, "GRADE 1": 3, "GRADE 2": 4, 
+            "BABY": 0, "MIDDLE": 1, "PRE-UNIT": 2, "GRADE 1": 3, "GRADE 2": 4, 
             "GRADE 3": 5, "GRADE 4": 6, "GRADE 5": 7, "GRADE 6": 8, "GRADE 7": 9
         }
         num = mapping.get(class_id.upper(), -1)
@@ -157,12 +157,12 @@ class PrimaryPupilImporter:
         ]
 
         table = Table(title="Processing Pupils", box=box.DOUBLE, show_header=True, header_style="bold magenta")
-        for col, width in [("SN",4), ("ID",12), ("NAME",28), ("SEX",5), ("CLASS",6), ("SECTION",8), ("STATUS",10)]:
+        for col, width in [("SN",4), ("ID",12), ("NAME",28), ("SEX",5), ("CLASS",12), ("SECTION",8), ("STATUS",10)]:
             table.add_column(col, width=width)
 
         serial = 1
         
-        # ONLY REPLACED RICH PROGRESS WITH TQDM - KEPT EVERYTHING ELSE
+        # REPLACED RICH PROGRESS WITH TQDM
         for i, (excel_row_idx, r) in enumerate(tqdm(valid_rows, desc="Processing pupils", unit="pupil")):
             pupil_id = pupil_ids[i]
             first = self.escape_single_quote(r["FIRST NAME"]).upper()
@@ -238,26 +238,42 @@ class PrimaryPupilImporter:
 
         self.console.print(table)
 
-        # INSERT DB - KEPT RICH MESSAGE, ONLY REPLACED PROGRESS
+        # INSERT DB - ADDED TQDM WITH BATCHES FOR BEAUTIFUL PROGRESS
         self.console.print("[bold green]Inserting into database...[/bold green]")
 
         if pupil_records:
-            cur.executemany("""INSERT INTO [tbl_pupil_academic_info]
-                (pupil_id, first_name, middle_name, surname, sex, inactive, section_id, prem_no)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", pupil_records)
-            conn.commit()
+            batch_size = 10
+            with tqdm(total=len(pupil_records), desc="Pupil records", unit="record") as pbar:
+                for i in range(0, len(pupil_records), batch_size):
+                    batch = pupil_records[i:i + batch_size]
+                    cur.executemany("""INSERT INTO [tbl_pupil_academic_info]
+                        (pupil_id, first_name, middle_name, surname, sex, inactive, section_id, prem_no)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", batch)
+                    conn.commit()
+                    pbar.update(len(batch))
 
         if admission_records:
-            cur.executemany("""INSERT INTO [tbl_pupil_admission]
-                (pupil_id, admn_no, entrance_mode, former_school) VALUES (?, ?, ?, ?)""", admission_records)
-            conn.commit()
+            batch_size = 10
+            with tqdm(total=len(admission_records), desc="Admission records", unit="record") as pbar:
+                for i in range(0, len(admission_records), batch_size):
+                    batch = admission_records[i:i + batch_size]
+                    cur.executemany("""INSERT INTO [tbl_pupil_admission]
+                        (pupil_id, admn_no, entrance_mode, former_school) VALUES (?, ?, ?, ?)""", batch)
+                    conn.commit()
+                    pbar.update(len(batch))
 
         if family_records:
-            used = [c for i, c in enumerate(family_keys) if c in ("pupil_id", "date_of_birth") or any(rec[i] for rec in family_records)]
-            sql = f"INSERT INTO [tbl_pupil_family_info] ({', '.join(f'[{c}]' for c in used)}) VALUES ({', '.join('?' * len(used))})"
-            data = [[r[family_keys.index(c)] for c in used] for r in family_records]
-            cur.executemany(sql, data)
-            conn.commit()
+            batch_size = 10
+            with tqdm(total=len(family_records), desc="Family records", unit="record") as pbar:
+                used = [c for i, c in enumerate(family_keys) if c in ("pupil_id", "date_of_birth") or any(rec[i] for rec in family_records)]
+                sql = f"INSERT INTO [tbl_pupil_family_info] ({', '.join(f'[{c}]' for c in used)}) VALUES ({', '.join('?' * len(used))})"
+                
+                for i in range(0, len(family_records), batch_size):
+                    batch = family_records[i:i + batch_size]
+                    data = [[r[family_keys.index(c)] for c in used] for r in batch]
+                    cur.executemany(sql, data)
+                    conn.commit()
+                    pbar.update(len(batch))
 
         # SAVE
         timestamp = datetime.now().strftime("%d%b%Y %H%M%S")
