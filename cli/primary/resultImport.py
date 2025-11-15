@@ -163,7 +163,7 @@ class PrimaryResultImporter:
 
         conn = pyodbc.connect(self.conn_str)
         cur = conn.cursor()
-
+        console.print(f"\n[bold green]Inserting {total} records...[/bold green]")
         try:
             with tqdm(total=total, desc=f"Inserting", colour="cyan") as pbar:
                 batch = []
