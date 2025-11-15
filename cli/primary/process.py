@@ -283,40 +283,140 @@ class ExamProcessor:
         
         # Create full name
         df['full_name'] = df.apply(
-            lambda row: f"{row.get('first_name', '')} {row.get('middle_name', '')} {row.get('last_name', '')}".strip(),
+            lambda row: f"{row.get('first_name', '')} {row.get('middle_name', '')} {row.get('surname', '')}".strip(),
             axis=1
         )
         
         return df
     
     def _display_data_preview(self, df: pd.DataFrame):
-        """Display preview of loaded data"""
-        console.print("\n" + "="*80)
-        console.print("[bold cyan]📊 DATA PREVIEW - FIRST 10 STUDENTS[/bold cyan]")
-        console.print("="*80 + "\n")
+        """Display comprehensive preview of loaded data"""
+        console.print("\n" + "="*100)
+        console.print("[bold cyan]📊 DATA PREVIEW - LOADED STUDENTS[/bold cyan]")
+        console.print("="*100 + "\n")
         
+        # Show first 15 students with all details
         preview_data = []
-        for idx, row in df.head(10).iterrows():
+        for idx, row in df.head(15).iterrows():
             subjects_taken = sum(pd.notna(row[col]) for col in self.subject_columns)
+            total = row.get('total_marks', 0) if pd.notna(row.get('total_marks')) else 0
             avg = row.get('avg_marks', 0) if pd.notna(row.get('avg_marks')) else 0
+            
+            # Get individual subject marks
+            subject_marks = []
+            for subj_col in self.subject_columns[:4]:  # Show first 4 subjects
+                mark = row.get(subj_col, '')
+                if pd.notna(mark):
+                    subject_marks.append(f"{int(mark)}")
+                else:
+                    subject_marks.append("-")
             
             preview_data.append([
                 row['pupil_id'],
-                row.get('full_name', 'N/A')[:30],
+                row.get('full_name', 'N/A')[:25],
                 row.get('sex', 'N/A'),
-                row.get('section_id', 'None'),
+                row.get('section_id', '-'),
                 f"{subjects_taken}/{len(self.subject_columns)}",
-                f"{avg:.2f}" if avg > 0 else "-",
-                row.get('avg_grade', '-')
+                f"{int(total)}" if total > 0 else "-",
+                f"{avg:.1f}" if avg > 0 else "-",
+                row.get('avg_grade', '-'),
+                " | ".join(subject_marks)
             ])
         
-        headers = ["Pupil ID", "Full Name", "Sex", "Stream", "Subjects", "Avg", "Grade"]
+        # Get first 4 subject names for header
+        subject_headers = [self.subject_mapping.get(col, col) for col in self.subject_columns[:4]]
+        
+        headers = ["Pupil ID", "Full Name", "Sex", "Stream", "Subj", "Total", "Avg", "Grade", " | ".join(subject_headers)]
         table_str = tabulate(preview_data, headers=headers, tablefmt="fancy_grid", 
-                           colalign=("left", "left", "center", "center", "center", "right", "center"))
+                           colalign=("left", "left", "center", "center", "center", "right", "right", "center", "left"))
         
         print(table_str)
-        console.print(f"\n[yellow]Total records loaded: {len(df)}[/yellow]")
-        console.print(f"[yellow]Records with results: {(df[self.subject_columns].notna().any(axis=1)).sum()}[/yellow]\n")
+        
+        # Summary statistics
+        with_results = df[df[self.subject_columns].notna().any(axis=1)]
+        console.print(f"\n[cyan]📈 Quick Stats:[/cyan]")
+        console.print(f"  • Total records: [bold]{len(df)}[/bold]")
+        console.print(f"  • With results: [bold]{len(with_results)}[/bold]")
+        console.print(f"  • Male: {(df['sex'] == 'M').sum()} | Female: {(df['sex'] == 'F').sum()}")
+        if 'section_id' in df.columns:
+            streams = df['section_id'].value_counts()
+            if len(streams) > 0:
+                stream_str = " | ".join([f"{s}: {c}" for s, c in streams.items()])
+                console.print(f"  • Streams: {stream_str}")
+        console.print()
+    
+    def _display_top_bottom_performers(self, df: pd.DataFrame):
+        """Display top and bottom performers side by side"""
+        with_results = df[df['subject_count'] > 0].copy()
+        
+        if len(with_results) == 0:
+            return
+        
+        console.print("\n" + "="*100)
+        console.print("[bold cyan]🏆 PERFORMANCE HIGHLIGHTS[/bold cyan]")
+        console.print("="*100 + "\n")
+        
+        # Top 10 performers
+        console.print("[bold green]TOP 10 PERFORMERS[/bold green]\n")
+        top_10 = with_results.nsmallest(10, 'pos')
+        top_data = []
+        
+        for _, row in top_10.iterrows():
+            # Get best 3 subjects
+            subject_scores = []
+            for subj_col in self.subject_columns:
+                if pd.notna(row.get(subj_col)):
+                    subj_short = self.subject_mapping.get(subj_col, subj_col)
+                    subject_scores.append((subj_short, row[subj_col]))
+            
+            subject_scores.sort(key=lambda x: x[1], reverse=True)
+            best_subjects = " | ".join([f"{s}:{int(m)}" for s, m in subject_scores[:3]])
+            
+            top_data.append([
+                int(row['pos']),
+                row['pupil_id'],
+                row.get('full_name', 'N/A')[:25],
+                row.get('sex', '-'),
+                row.get('section_id', '-'),
+                f"{row['avg_marks']:.1f}",
+                row.get('avg_grade', '-'),
+                best_subjects
+            ])
+        
+        headers = ["Pos", "Pupil ID", "Full Name", "Sex", "Stream", "Avg", "Grade", "Best 3 Subjects"]
+        print(tabulate(top_data, headers=headers, tablefmt="fancy_grid",
+                      colalign=("center", "left", "left", "center", "center", "right", "center", "left")))
+        
+        # Bottom 10 performers
+        console.print("\n[bold red]BOTTOM 10 PERFORMERS (Need Support)[/bold red]\n")
+        bottom_10 = with_results.nlargest(10, 'pos')
+        bottom_data = []
+        
+        for _, row in bottom_10.iterrows():
+            # Get weakest 3 subjects
+            subject_scores = []
+            for subj_col in self.subject_columns:
+                if pd.notna(row.get(subj_col)):
+                    subj_short = self.subject_mapping.get(subj_col, subj_col)
+                    subject_scores.append((subj_short, row[subj_col]))
+            
+            subject_scores.sort(key=lambda x: x[1])
+            weak_subjects = " | ".join([f"{s}:{int(m)}" for s, m in subject_scores[:3]])
+            
+            bottom_data.append([
+                int(row['pos']),
+                row['pupil_id'],
+                row.get('full_name', 'N/A')[:25],
+                row.get('sex', '-'),
+                row.get('section_id', '-'),
+                f"{row['avg_marks']:.1f}",
+                row.get('avg_grade', '-'),
+                weak_subjects
+            ])
+        
+        print(tabulate(bottom_data, headers=headers, tablefmt="fancy_grid",
+                      colalign=("center", "left", "left", "center", "center", "right", "center", "left")))
+        console.print()
     
     def get_grade(self, marks: float) -> str:
         """Get grade based on marks"""
@@ -618,48 +718,68 @@ class ExamProcessor:
     
     def _display_final_summary(self, results_df: pd.DataFrame):
         """Display beautiful final summary"""
-        console.print("\n[magenta]╔" + "═" * 68 + "╗[/magenta]")
-        console.print("[magenta]║" + " " * 23 + "FINAL SUMMARY" + " " * 32 + "║[/magenta]")
-        console.print("[magenta]╚" + "═" * 68 + "╝[/magenta]\n")
-        
-        # Statistics table
-        stats_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan")
-        stats_table.add_column("Metric", style="yellow", width=30)
-        stats_table.add_column("Value", style="green", width=30)
+        console.print("\n" + "="*100)
+        console.print("[bold magenta]📊 FINAL SUMMARY & STATISTICS[/bold magenta]")
+        console.print("="*100 + "\n")
         
         with_results = results_df[results_df['subject_count'] > 0]
         
-        stats_table.add_row("Total Students", str(len(results_df)))
-        stats_table.add_row("Students with Results", str(len(with_results)))
-        stats_table.add_row("Average Marks (Overall)", f"{with_results['avg_marks'].mean():.2f}")
-        stats_table.add_row("Highest Score", f"{with_results['avg_marks'].max():.2f}")
-        stats_table.add_row("Lowest Score", f"{with_results['avg_marks'].min():.2f}")
+        # Overall statistics table
+        stats_data = [
+            ["Total Students", str(len(results_df))],
+            ["Students with Results", str(len(with_results))],
+            ["Average Score (Class)", f"{with_results['avg_marks'].mean():.2f}"],
+            ["Highest Score", f"{with_results['avg_marks'].max():.2f}"],
+            ["Lowest Score", f"{with_results['avg_marks'].min():.2f}"],
+            ["Median Score", f"{with_results['avg_marks'].median():.2f}"],
+        ]
         
-        console.print(stats_table)
+        print(tabulate(stats_data, headers=["Metric", "Value"], tablefmt="fancy_grid",
+                      colalign=("left", "right")))
         
-        # Top performers
-        console.print("\n[bold cyan]🏆 TOP 5 PERFORMERS[/bold cyan]\n")
-        top_table = Table(box=box.SIMPLE, show_header=True, header_style="bold yellow")
-        top_table.add_column("Rank", style="magenta", width=8)
-        top_table.add_column("Pupil ID", style="cyan", width=15)
-        top_table.add_column("Avg Marks", style="green", width=12)
-        top_table.add_column("Grade", style="yellow", width=10)
+        # Grade distribution
+        console.print("\n[bold cyan]📈 Grade Distribution[/bold cyan]\n")
+        grade_dist = with_results['avg_grade'].value_counts().sort_index()
+        grade_data = [[grade, count, f"{(count/len(with_results)*100):.1f}%"] 
+                     for grade, count in grade_dist.items()]
         
-        top_5 = with_results.nsmallest(5, 'pos')
-        for _, row in top_5.iterrows():
-            top_table.add_row(
-                str(int(row['pos'])),
-                str(row['pupil_id']),
-                f"{row['avg_marks']:.2f}",
-                str(row['avg_grade'])
-            )
+        print(tabulate(grade_data, headers=["Grade", "Count", "Percentage"], 
+                      tablefmt="fancy_grid", colalign=("center", "right", "right")))
         
-        console.print(top_table)
+        # Subject performance analysis
+        console.print("\n[bold cyan]📚 Subject Performance Analysis[/bold cyan]\n")
+        subject_data = []
+        
+        for subj_col in self.subject_columns:
+            subj_marks = results_df[subj_col].dropna()
+            if len(subj_marks) > 0:
+                subj_name = self.subject_mapping.get(subj_col, subj_col)
+                subject_data.append([
+                    subj_name,
+                    len(subj_marks),
+                    f"{subj_marks.mean():.1f}",
+                    f"{subj_marks.max():.0f}",
+                    f"{subj_marks.min():.0f}",
+                    f"{subj_marks.std():.1f}"
+                ])
+        
+        print(tabulate(subject_data, 
+                      headers=["Subject", "Students", "Avg", "Max", "Min", "Std Dev"],
+                      tablefmt="fancy_grid",
+                      colalign=("left", "right", "right", "right", "right", "right")))
+        
+        # Display top and bottom performers
+        self._display_top_bottom_performers(results_df)
         
         # Sample JSON
-        console.print("\n[bold cyan]📄 SAMPLE RESULT JSON (Top Student)[/bold cyan]\n")
-        sample_json = top_5.iloc[0]['result_json'].replace("''", "'")
+        console.print("\n" + "="*100)
+        console.print("[bold cyan]📄 SAMPLE RESULT JSON (Top Student)[/bold cyan]")
+        console.print("="*100 + "\n")
+        
+        top_student = with_results.nsmallest(1, 'pos').iloc[0]
+        sample_json = top_student['result_json'].replace("''", "'")
         sample_data = json.loads(sample_json)
+        
         console.print(Panel(json.dumps(sample_data, indent=2), 
                           border_style="cyan",
                           padding=(1, 2)))
