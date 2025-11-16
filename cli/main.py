@@ -10,6 +10,7 @@ from .colors import console
 # IMPORT ONLY WHAT EXISTS IN YOUR ORIGINAL FILES
 from .alevel.ranking import process_exam as alevel_process_exam
 from .olevel.processDS import OlevelProcessor
+from .primary.process import ExamProcessor as PrimaryProcessor
 from .olevel.resultImport import OlevelResultImporter
 from .primary.resultImport import PrimaryResultImporter
 from .olevel.insert import OlevelStudentImporter
@@ -60,7 +61,10 @@ def upload(
     
     elif level == "primary":
         importer=PrimaryResultImporter(db_path=db_path,excel_path=excel_path,exam_id=exam_id)
-        importer.run()
+        success=importer.run()
+        if success and process_after:
+            processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
+            processor.complete_exam()
     else:
         console.print(f"[yellow]upload not implemented for {level}[/]")
 

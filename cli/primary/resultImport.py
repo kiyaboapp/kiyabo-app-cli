@@ -18,7 +18,8 @@ class PrimaryResultImporter:
         exam_id: str,
         results_table: str = "tbl_pupil_exam_results",
         batch_size: int = 1,
-        auto_import: bool = True 
+        auto_import: bool = True,
+        process_after:bool=True
     ):
         self.db_path = db_path
         self.excel_path = excel_path
@@ -26,6 +27,7 @@ class PrimaryResultImporter:
         self.results_table = results_table
         self.batch_size = batch_size
         self.auto_import = auto_import
+        self.process_after=process_after
 
         if not os.path.exists(db_path):
             raise FileNotFoundError(f"Database not found: {db_path}")
@@ -126,8 +128,7 @@ class PrimaryResultImporter:
         self._show_subject_mapping()
         self._preview_data()
 
-        # ← THIS IS WHAT YOU ASKED FOR
-        # auto_import=True → NO "Start import?" QUESTION
+
         if not self.auto_import:
             if input("\nStart import? (y/N): ").strip().lower() != "y":
                 console.print("Import cancelled.")
@@ -200,7 +201,7 @@ class PrimaryResultImporter:
 if __name__ == "__main__":
     importer = PrimaryResultImporter(
         db_path=r"C:\Kiyabo App\backend\Kiyabo App Backend v3.0.0.accdb",
-        excel_path=r"C:\Kiyabo App\exam templates\Form_Grade 2_Exam_Template_20251115-163121.xlsx",
+        excel_path=r"C:\Kiyabo App\exam templates\Form_Grade 2_Exam_Template_20251116-212152.xlsx",
         exam_id="ANN420251117",
         batch_size=1,
         auto_import=True

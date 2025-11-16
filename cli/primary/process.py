@@ -320,6 +320,8 @@ class ExamProcessor:
     def _display_top_bottom_performers(self, df: pd.DataFrame):
         """Display top and bottom performers side by side"""
         with_results = df[df['subject_count'] > 0].copy()
+        with_results['pos'] = pd.to_numeric(with_results['pos'], errors='coerce')
+        with_results['out_of'] = pd.to_numeric(with_results['out_of'], errors='coerce')
         
         if len(with_results) == 0:
             return
@@ -571,11 +573,14 @@ class ExamProcessor:
             sex['out_of'] = int(row['out_of_sex']) if pd.notna(row.get('out_of_sex')) else None
             positions['sex'] = sex
         
+        # MODIFIED: Always include stream in JSON, can be null
         if 'pos_stream' in row and pd.notna(row.get('pos_stream')):
             stream = {}
             stream['pos'] = int(row['pos_stream'])
             stream['out_of'] = int(row['out_of_stream']) if pd.notna(row.get('out_of_stream')) else None
             positions['stream'] = stream
+        else:
+            positions['stream'] = None
         
         root['position'] = positions
         
@@ -604,11 +609,14 @@ class ExamProcessor:
                     subj_sex['out_of'] = int(row[f"{subject_col}_sex_out_of"])
                     subj_pos['sex'] = subj_sex
                 
+                # MODIFIED: Always include stream in JSON, can be null
                 if pd.notna(row.get(f"{subject_col}_pos_stream")):
                     subj_stream = {}
                     subj_stream['pos'] = int(row[f"{subject_col}_pos_stream"])
                     subj_stream['out_of'] = int(row[f"{subject_col}_stream_out_of"])
                     subj_pos['stream'] = subj_stream
+                else:
+                    subj_pos['stream'] = None
                 
                 subj_data['position'] = subj_pos
                 subjects[subject_short] = subj_data
@@ -694,6 +702,281 @@ class ExamProcessor:
         else:
             console.print()
     
+    def calculate_and_save_competency(self, results_df: pd.DataFrame):
+        """Calculate competency data and save to tbl_Competency"""
+        console.print("="*80)
+        console.print("[bold white]STEP 6: CALCULATING COMPETENCY DATA[/bold white]")
+        console.print("="*80 + "\n")
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        # Check if gpa column exists and rename to avg_marks if needed
+        console.print("[yellow]🔍 Checking tbl_Competency structure...[/yellow]")
+        try:
+            # Try to select gpa column
+            cursor.execute("SELECT TOP 1 gpa FROM tbl_Competency")
+            # If we get here, gpa column exists - try to rename it
+            console.print("[yellow]⚠[/yellow] Found 'gpa' column, attempting to rename to 'avg_marks'...")
+            try:
+                # Try to rename using SQL (this may not work in Access)
+                cursor.execute("ALTER TABLE tbl_Competency RENAME COLUMN gpa TO avg_marks")
+                conn.commit()
+                console.print("[green]✓[/green] Successfully renamed 'gpa' to 'avg_marks'")
+            except:
+                # If rename fails, just create avg_marks column
+                console.print("[yellow]⚠[/yellow] Cannot rename column, creating 'avg_marks' instead...")
+                try:
+                    cursor.execute("ALTER TABLE tbl_Competency ADD COLUMN avg_marks DOUBLE")
+                    conn.commit()
+                    console.print("[green]✓[/green] Created 'avg_marks' column")
+                except:
+                    console.print("[yellow]⚠[/yellow] 'avg_marks' may already exist")
+        except:
+            # gpa column doesn't exist, check if avg_marks exists
+            try:
+                cursor.execute("SELECT TOP 1 avg_marks FROM tbl_Competency")
+                console.print("[green]✓[/green] Table already uses 'avg_marks'")
+            except:
+                # Neither exists, create avg_marks
+                console.print("[yellow]⚠[/yellow] Creating 'avg_marks' column...")
+                try:
+                    cursor.execute("ALTER TABLE tbl_Competency ADD COLUMN avg_marks DOUBLE")
+                    conn.commit()
+                    console.print("[green]✓[/green] Created 'avg_marks' column")
+                except Exception as e:
+                    console.print(f"[red]❌[/red] Could not create column: {str(e)}")
+        
+        # Delete existing records for this exam to write afresh
+        console.print("\n[yellow]🗑️  Deleting existing competency records for this exam...[/yellow]")
+        try:
+            cursor.execute("DELETE FROM tbl_Competency WHERE exam_id = ?", (self.exam_id,))
+            conn.commit()
+            console.print("[green]✓[/green] Existing records cleared")
+        except Exception as e:
+            console.print(f"[yellow]⚠[/yellow] Could not clear existing records: {str(e)}")
+        
+        # Grade to Swahili mapping
+        grade_mappings = {
+            'A': 'Bora',
+            'B': 'Nzuri Sana',
+            'C': 'Nzuri',
+            'D': 'Inaridhisha',
+            'E': 'Feli'
+        }
+        
+        console.print("\n[yellow]📊 Processing subject competency...[/yellow]")
+        
+        competency_records = []
+        
+        with tqdm(total=len(self.subject_columns), 
+                 desc=f"{Fore.CYAN}Analyzing subjects",
+                 bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]',
+                 colour='cyan') as pbar:
+            
+            for subject_col in self.subject_columns:
+                # Extract subject_id from subject column name (e.g., "sub01" -> 1)
+                subject_id = int(subject_col.replace('sub', ''))
+                
+                # Get all students with valid results for this subject
+                valid_results = results_df[results_df[subject_col].notna()].copy()
+                
+                if len(valid_results) == 0:
+                    pbar.update(1)
+                    continue
+                
+                # Get grade column
+                grade_col = f"{subject_col}_grade"
+                
+                # Count grades
+                A_s = (valid_results[grade_col] == 'A').sum()
+                B_s = (valid_results[grade_col] == 'B').sum()
+                C_s = (valid_results[grade_col] == 'C').sum()
+                D_s = (valid_results[grade_col] == 'D').sum()
+                E_s = (valid_results[grade_col] == 'E').sum()
+                
+                total = len(valid_results)
+                pass_count = A_s + B_s + C_s  # A, B, C are pass
+                fail_count = D_s + E_s  # D, E are fails
+                
+                # Calculate average marks for this subject
+                avg_marks = valid_results[subject_col].mean()
+                
+                # Get average grade for this subject
+                avg_grade = self.get_grade(avg_marks)
+                
+                # Generate competency level
+                if avg_grade in grade_mappings:
+                    competency_level = f"Daraja {avg_grade} ({grade_mappings[avg_grade]})"
+                else:
+                    competency_level = ""
+                
+                competency_records.append({
+                    'exam_id': self.exam_id,
+                    'subject_id': subject_id,
+                    'A_s': A_s,
+                    'B_s': B_s,
+                    'C_s': C_s,
+                    'D_s': D_s,
+                    'E_s': E_s,
+                    'total': total,
+                    'pass': pass_count,
+                    'fail': fail_count,
+                    'avg_marks': avg_marks,
+                    'competency_level': competency_level
+                })
+                
+                pbar.update(1)
+        
+        console.print(f"\n[green]✓[/green] Processed {len(competency_records)} subjects")
+        
+        # Save to database
+        console.print("\n[yellow]💾 Saving competency data to database...[/yellow]")
+        
+        saved_count = 0
+        error_count = 0
+        
+        with tqdm(total=len(competency_records), 
+                 desc=f"{Fore.GREEN}Saving competency",
+                 bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]',
+                 colour='green') as pbar:
+            
+            for record in competency_records:
+                try:
+                    # Note: total, pass, fail are calculated fields in Access DB - don't insert them
+                    query = """
+                    INSERT INTO tbl_Competency 
+                    (exam_id, subject_id, A_s, B_s, C_s, D_s, E_s, gpa, competency_level)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+                    
+                    cursor.execute(query, (
+                        record['exam_id'],
+                        int(record['subject_id']),  # Convert to Python int
+                        int(record['A_s']),  # Convert to Python int
+                        int(record['B_s']),  # Convert to Python int
+                        int(record['C_s']),  # Convert to Python int
+                        int(record['D_s']),  # Convert to Python int
+                        int(record['E_s']),  # Convert to Python int
+                        float(record['avg_marks']),  # Convert to Python float
+                        record['competency_level']
+                    ))
+                    saved_count += 1
+                except Exception as e:
+                    error_count += 1
+                    if error_count <= 3:
+                        console.print(f"\n[red]Error saving subject {record['subject_id']}: {str(e)}[/red]")
+                
+                pbar.update(1)
+        
+        conn.commit()
+        conn.close()
+        
+        console.print(f"\n[green]✅ Competency data saved: {saved_count} subjects![/green]")
+        if error_count > 0:
+            console.print(f"[yellow]⚠ {error_count} records had errors[/yellow]\n")
+        else:
+            console.print()
+        
+        # Display competency summary
+        self._display_competency_summary(competency_records)
+    
+    def _display_competency_summary(self, competency_records: List[Dict]):
+        """Display competency summary table"""
+        console.print("\n" + "="*100)
+        console.print("[bold cyan]📊 COMPETENCY SUMMARY BY SUBJECT[/bold cyan]")
+        console.print("="*100 + "\n")
+        
+        if not competency_records:
+            console.print("[yellow]No competency data to display[/yellow]\n")
+            return
+        
+        # Grade color mappings
+        grade_colors = {
+            'A': '#00A82A',  # Green
+            'B': '#1FEE0B',  # Light Green
+            'C': '#DEF043',  # Yellow
+            'D': '#DEF043',  # Yellow
+            'E': '#FF272F'   # Red
+        }
+        
+        # Prepare data for table with colored competency levels
+        comp_data = []
+        for record in competency_records:
+            # Get subject name from mapping
+            subject_col = f"sub{record['subject_id']:02d}"
+            subject_name = self.subject_mapping.get(subject_col, f"Sub {record['subject_id']}")
+            
+            pass_rate = (record['pass'] / record['total'] * 100) if record['total'] > 0 else 0
+            
+            # Extract grade from competency_level (e.g., "Daraja A (Bora)" -> "A")
+            comp_level_display = record['competency_level']
+            avg_grade = ""
+            if 'Daraja' in comp_level_display:
+                parts = comp_level_display.split()
+                if len(parts) >= 2:
+                    avg_grade = parts[1]
+            
+            # Color code the competency level based on grade
+            if avg_grade in grade_colors:
+                color_code = grade_colors[avg_grade]
+                # Convert hex to RGB for terminal display
+                if avg_grade == 'A':
+                    colored_comp = f"[green]{comp_level_display}[/green]"
+                elif avg_grade == 'B':
+                    colored_comp = f"[bold green]{comp_level_display}[/bold green]"
+                elif avg_grade in ['C', 'D']:
+                    colored_comp = f"[yellow]{comp_level_display}[/yellow]"
+                elif avg_grade == 'E':
+                    colored_comp = f"[red]{comp_level_display}[/red]"
+                else:
+                    colored_comp = comp_level_display
+            else:
+                colored_comp = comp_level_display
+            
+            comp_data.append([
+                subject_name,
+                record['total'],
+                record['A_s'],
+                record['B_s'],
+                record['C_s'],
+                record['D_s'],
+                record['E_s'],
+                record['pass'],
+                record['fail'],
+                f"{pass_rate:.1f}%",
+                f"{record['avg_marks']:.1f}",
+                colored_comp
+            ])
+        
+        headers = ["Subject", "Total", "A", "B", "C", "D", "E", "Pass", "Fail", "Pass%", "Avg", "Competency Level"]
+        
+        # Use rich table for colored output
+        from rich.table import Table
+        comp_table = Table(title="📊 COMPETENCY DATA - tbl_Competency", 
+                          box=box.ROUNDED,
+                          show_header=True,
+                          header_style="bold cyan")
+        
+        comp_table.add_column("Subject", style="white", width=12)
+        comp_table.add_column("Total", justify="right", style="cyan", width=6)
+        comp_table.add_column("A", justify="right", style="green", width=4)
+        comp_table.add_column("B", justify="right", style="green", width=4)
+        comp_table.add_column("C", justify="right", style="yellow", width=4)
+        comp_table.add_column("D", justify="right", style="yellow", width=4)
+        comp_table.add_column("E", justify="right", style="red", width=4)
+        comp_table.add_column("Pass", justify="right", style="bold green", width=6)
+        comp_table.add_column("Fail", justify="right", style="bold red", width=6)
+        comp_table.add_column("Pass%", justify="right", style="magenta", width=7)
+        comp_table.add_column("Avg", justify="right", style="bold cyan", width=6)
+        comp_table.add_column("Competency Level", style="bold", width=25)
+        
+        for row_data in comp_data:
+            comp_table.add_row(*[str(cell) for cell in row_data])
+        
+        console.print(comp_table)
+        console.print()
+    
     def _display_final_summary(self, results_df: pd.DataFrame):
         """Display beautiful final summary"""
         console.print("\n" + "="*100)
@@ -750,19 +1033,19 @@ class ExamProcessor:
         self._display_top_bottom_performers(results_df)
         
         # Sample JSON
-        console.print("\n" + "="*100)
-        console.print("[bold cyan]📄 SAMPLE RESULT JSON (Top Student)[/bold cyan]")
-        console.print("="*100 + "\n")
+        #console.print("\n" + "="*100)
+        #console.print("[bold cyan]📄 SAMPLE RESULT JSON (Top Student)[/bold cyan]")
+        #console.print("="*100 + "\n")
         
-        top_student = with_results.nsmallest(1, 'pos').iloc[0]
-        sample_json = top_student['result_json'].replace("''", "'")
-        sample_data = json.loads(sample_json)
+        #top_student = with_results.nsmallest(1, 'pos').iloc[0]
+        #sample_json = top_student['result_json']
+        #sample_data = json.loads(sample_json)
         
-        console.print(Panel(json.dumps(sample_data, indent=2), 
-                          border_style="cyan",
-                          padding=(1, 2)))
+        #console.print(Panel(json.dumps(sample_data, indent=2), 
+        #                  border_style="cyan",
+        #                  padding=(1, 2)))
         
-        console.print("\n")
+        #console.print("\n")
     
     def complete_exam(self):
         """Complete all exam processing steps"""
@@ -803,6 +1086,9 @@ class ExamProcessor:
         
         # Display final summary
         self._display_final_summary(df)
+
+                # Step 6: Calculate and save competency
+        self.calculate_and_save_competency(df)
         
         console.print("[bold green]🎉 EXAM PROCESSING COMPLETED SUCCESSFULLY! 🎉[/bold green]\n")
         
