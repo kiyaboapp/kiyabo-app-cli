@@ -24,34 +24,6 @@ init(autoreset=True)
 console = Console()
 
 
-class FastJSON:
-    """
-    Python implementation of VBA FastJSON class
-    Simplified for SQL-safe JSON storage
-    """
-    
-    def __init__(self):
-        self.data = {}
-    
-    def add(self, key: str, value):
-        """Add simple value"""
-        self.data[key] = value if value is not None else ""
-    
-    def add_object(self, key: str, obj: 'FastJSON'):
-        """Add nested object"""
-        self.data[key] = obj.data
-    
-    def to_sql_safe(self) -> str:
-        """Convert to SQL-safe JSON string"""
-        json_str = json.dumps(self.data, ensure_ascii=False)
-        # SQL-safe: escape single quotes
-        return json_str.replace("'", "''")
-    
-    def to_json(self) -> str:
-        """Convert to pretty JSON"""
-        return json.dumps(self.data, indent=2, ensure_ascii=False)
-
-
 class ExamProcessor:
     """
     Main class for processing exam results
@@ -574,71 +546,77 @@ class ExamProcessor:
         console.print("\n[green]✅ Subject positions assigned![/green]\n")
         return df
     
+
     def create_result_json(self, row: pd.Series) -> str:
-        """Create JSON representation of exam results"""
-        root = FastJSON()
+        """Create JSON representation of exam results as a string"""
         
-        root.add('exam_id', row.get('exam_id', ''))
-        root.add('avg_marks', float(row['avg_marks']) if pd.notna(row['avg_marks']) else 0)
-        root.add('avg_grade', row.get('avg_grade', ''))
+        # The root dictionary
+        root = {}
         
-        positions = FastJSON()
+        root['exam_id'] = row.get('exam_id', '')
+        root['avg_marks'] = float(row['avg_marks']) if pd.notna(row['avg_marks']) else 0
+        root['avg_grade'] = row.get('avg_grade', '')
         
-        overall = FastJSON()
-        overall.add('pos', int(row['pos']) if pd.notna(row.get('pos')) else None)
-        overall.add('out_of', int(row['out_of']) if pd.notna(row.get('out_of')) else None)
-        positions.add_object('overall', overall)
+        # Positions dictionary
+        positions = {}
+        
+        overall = {}
+        overall['pos'] = int(row['pos']) if pd.notna(row.get('pos')) else None
+        overall['out_of'] = int(row['out_of']) if pd.notna(row.get('out_of')) else None
+        positions['overall'] = overall
         
         if 'pos_sex' in row and pd.notna(row.get('pos_sex')):
-            sex = FastJSON()
-            sex.add('pos', int(row['pos_sex']))
-            sex.add('out_of', int(row['out_of_sex']) if pd.notna(row.get('out_of_sex')) else None)
-            positions.add_object('sex', sex)
+            sex = {}
+            sex['pos'] = int(row['pos_sex'])
+            sex['out_of'] = int(row['out_of_sex']) if pd.notna(row.get('out_of_sex')) else None
+            positions['sex'] = sex
         
         if 'pos_stream' in row and pd.notna(row.get('pos_stream')):
-            stream = FastJSON()
-            stream.add('pos', int(row['pos_stream']))
-            stream.add('out_of', int(row['out_of_stream']) if pd.notna(row.get('out_of_stream')) else None)
-            positions.add_object('stream', stream)
+            stream = {}
+            stream['pos'] = int(row['pos_stream'])
+            stream['out_of'] = int(row['out_of_stream']) if pd.notna(row.get('out_of_stream')) else None
+            positions['stream'] = stream
         
-        root.add_object('position', positions)
+        root['position'] = positions
         
-        subjects = FastJSON()
+        # Subjects dictionary
+        subjects = {}
         
         for subject_col in self.subject_columns:
             if pd.notna(row.get(subject_col)):
                 subject_short = self.subject_mapping.get(subject_col, subject_col)
                 
-                subj_data = FastJSON()
-                subj_data.add('marks', float(row[subject_col]))
-                subj_data.add('grade', row.get(f"{subject_col}_grade", ''))
+                subj_data = {}
+                subj_data['marks'] = float(row[subject_col])
+                subj_data['grade'] = row.get(f"{subject_col}_grade", '')
                 
-                subj_pos = FastJSON()
+                subj_pos = {}
                 
                 if pd.notna(row.get(f"{subject_col}_pos")):
-                    subj_overall = FastJSON()
-                    subj_overall.add('pos', int(row[f"{subject_col}_pos"]))
-                    subj_overall.add('out_of', int(row[f"{subject_col}_out_of"]))
-                    subj_pos.add_object('overall', subj_overall)
+                    subj_overall = {}
+                    subj_overall['pos'] = int(row[f"{subject_col}_pos"])
+                    subj_overall['out_of'] = int(row[f"{subject_col}_out_of"])
+                    subj_pos['overall'] = subj_overall
                 
                 if pd.notna(row.get(f"{subject_col}_pos_sex")):
-                    subj_sex = FastJSON()
-                    subj_sex.add('pos', int(row[f"{subject_col}_pos_sex"]))
-                    subj_sex.add('out_of', int(row[f"{subject_col}_sex_out_of"]))
-                    subj_pos.add_object('sex', subj_sex)
+                    subj_sex = {}
+                    subj_sex['pos'] = int(row[f"{subject_col}_pos_sex"])
+                    subj_sex['out_of'] = int(row[f"{subject_col}_sex_out_of"])
+                    subj_pos['sex'] = subj_sex
                 
                 if pd.notna(row.get(f"{subject_col}_pos_stream")):
-                    subj_stream = FastJSON()
-                    subj_stream.add('pos', int(row[f"{subject_col}_pos_stream"]))
-                    subj_stream.add('out_of', int(row[f"{subject_col}_stream_out_of"]))
-                    subj_pos.add_object('stream', subj_stream)
+                    subj_stream = {}
+                    subj_stream['pos'] = int(row[f"{subject_col}_pos_stream"])
+                    subj_stream['out_of'] = int(row[f"{subject_col}_stream_out_of"])
+                    subj_pos['stream'] = subj_stream
                 
-                subj_data.add_object('position', subj_pos)
-                subjects.add_object(subject_short, subj_data)
+                subj_data['position'] = subj_pos
+                subjects[subject_short] = subj_data
         
-        root.add_object('subjects', subjects)
+        root['subjects'] = subjects
         
-        return root.to_sql_safe()
+        # Convert the final dictionary to a JSON string
+        return json.dumps(root)
     
     def save_results(self, results_df: pd.DataFrame):
         """Save processed results back to database"""
