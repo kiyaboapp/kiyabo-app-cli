@@ -749,6 +749,7 @@ class ExamProcessor:
                 pbar.update(1)
        
         conn.commit()
+        
         conn.close()
        
         console.print(f"\n[green]✅ Database updated: {success_count} records saved successfully![/green]")
@@ -1101,6 +1102,14 @@ class ExamProcessor:
         # padding=(1, 2)))
        
         #console.print("\n")
+    
+    def update_to_nulls(self):
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        query=f"UPDATE tbl_pupil_exam_results SET subject_count=?, total_marks=?,avg_grade=? WHERE subject_count=?"
+        cursor.execute(query,None,None,None,0)
+        conn.commit()
+        conn.close()
    
     def complete_exam(self):
         """Complete all exam processing steps"""
@@ -1153,7 +1162,9 @@ class ExamProcessor:
         console.print(f"[cyan]Sample →[/cyan] {sample['necta_results']}\n")
        
         # Step 5: Save to database
+        # The subject count should be null in DB so that when auto calculate average doesnt get devide by 0 error
         self.save_results(df)
+        self.update_to_nulls()
        
         # Display final summary
         self._display_final_summary(df)
