@@ -101,7 +101,6 @@ class PrimaryPupilImporter:
         self.console.print(f"[cyan]DB:[/cyan] {self.DB_PATH.name}")
         self.console.print(f"[cyan]XLS:[/cyan] {Path(self.excel_path).name}\n")
 
-        # LOAD EXCEL — NO CHECKS — YOU SAID IT EXISTS
         df = pd.read_excel(self.excel_path, header=0, dtype=str, engine='openpyxl')
         wb = openpyxl.load_workbook(self.excel_path)
         ws = wb.active
@@ -110,7 +109,7 @@ class PrimaryPupilImporter:
             self.console.print("[red]Excel is empty.[/red]")
             return
 
-        # PREVIEW
+        # PREVIEW (unchanged)
         self.console.print(Panel("[bold yellow]EXCEL PREVIEW (first 5 rows)[/bold yellow]"))
         preview = df[["FIRST NAME", "MIDDLE NAME", "SURNAME", "SEX", "CLASS ID"]].head(5).copy()
         preview.columns = ["FIRST", "MIDDLE", "SURNAME", "SEX", "CLASS"]
@@ -139,163 +138,184 @@ class PrimaryPupilImporter:
         conn = pyodbc.connect(CONN_STR, autocommit=False)
         cur = conn.cursor()
 
-        last_id = self.get_last_pupil_id_once(cur, class_number)
-        self.console.print(f"[bold cyan]Last Pupil ID in DB: {last_id}[/bold cyan]\n")
+        try:
+            last_id = self.get_last_pupil_id_once(cur, class_number)
+            self.console.print(f"[bold cyan]Last Pupil ID in DB: {last_id}[/bold cyan]\n")
 
-        pupil_ids = self.generate_pupil_ids_in_memory(last_id, len(valid_rows), class_number)
+            pupil_ids = self.generate_pupil_ids_in_memory(last_id, len(valid_rows), class_number)
 
-        # RECORDS
-        stats = {"total": len(valid_rows), "inserted": 0, "skipped": 0, "skip_reasons": {"duplicate_name": 0}}
-        pupil_records = []
-        admission_records = []
-        family_records = []
-        family_keys = [
-            "pupil_id", "date_of_birth", "father_name", "father_occupation", "father_phone", "father_phone_alternative",
-            "mother_name", "mother_occupation", "mother_phone", "mother_phone_alternative",
-            "gurdian_name", "gurdian_occupation", "gurdian_relationship", "gurdian_phone", "gurdian_phone_alternative",
-            "parent_name", "parent_occupation", "parent_phone", "parent_phone_alternative", "parent_relationship"
-        ]
+            # Collections for batch insert
+            pupil_records = []
+            admission_records = []
+            family_records = []
+            health_records = []        # ← NEW: only pupil_id
+            family_keys = [
+                "pupil_id", "date_of_birth", "father_name", "father_occupation", "father_phone", "father_phone_alternative",
+                "mother_name", "mother_occupation", "mother_phone", "mother_phone_alternative",
+                "gurdian_name", "gurdian_occupation", "gurdian_relationship", "gurdian_phone", "gurdian_phone_alternative",
+                "parent_name", "parent_occupation", "parent_phone", "parent_phone_alternative", "parent_relationship"
+            ]
 
-        table = Table(title="Processing Pupils", box=box.DOUBLE, show_header=True, header_style="bold magenta")
-        for col, width in [("SN",4), ("ID",12), ("NAME",28), ("SEX",5), ("CLASS",12), ("SECTION",8), ("STATUS",10)]:
-            table.add_column(col, width=width)
+            stats = {"total": len(valid_rows), "inserted": 0, "skipped": 0, "skip_reasons": {"duplicate_name": 0}}
+            table = Table(title="Processing Pupils", box=box.DOUBLE, show_header=True, header_style="bold magenta")
+            for col, width in [("SN",4), ("ID",12), ("NAME",28), ("SEX",5), ("CLASS",12), ("SECTION",8), ("STATUS",10)]:
+                table.add_column(col, width=width)
 
-        serial = 1
-        
-        # REPLACED RICH PROGRESS WITH TQDM
-        for i, (excel_row_idx, r) in enumerate(tqdm(valid_rows, desc="Processing pupils", unit="pupil")):
-            pupil_id = pupil_ids[i]
-            first = self.escape_single_quote(r["FIRST NAME"]).upper()
-            middle = self.escape_single_quote(r["MIDDLE NAME"]).upper()
-            surname = self.escape_single_quote(r["SURNAME"]).upper()
-            sex = str(r["SEX"]).upper()
-            inactive = -1 if str(r.get("INACTIVE", "")).strip().upper() == "YES" else 0
-            section = str(r["SECTION"]) if pd.notna(r.get("SECTION")) and str(r["SECTION"]).strip() else ""
-            prem_no = str(r["PREM NO"]) if pd.notna(r.get("PREM NO")) and str(r["PREM NO"]).strip() else None
-            full_name = f"{first} {middle} {surname}"
-            row_offset = excel_row_idx + 2
+            serial = 1
 
-            skip_reason = None
-            if self.name_exists(cur, first.replace("''", "'"), middle.replace("''", "'"), surname.replace("''", "'")):
-                skip_reason = "Duplicate Name"
-                stats["skipped"] += 1
-                stats["skip_reasons"]["duplicate_name"] += 1
-                for c in range(2, 10): ws.cell(row=row_offset, column=c).fill = self.RED_FILL
-            else:
-                stats["inserted"] += 1
-                ws.cell(row=row_offset, column=21).value = pupil_id
-                for c in range(2, 10): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
+            for i, (excel_row_idx, r) in enumerate(tqdm(valid_rows, desc="Preparing data", unit="pupil")):
+                pupil_id = pupil_ids[i]
+                first = self.escape_single_quote(r["FIRST NAME"]).upper()
+                middle = self.escape_single_quote(r["MIDDLE NAME"]).upper()
+                surname = self.escape_single_quote(r["SURNAME"]).upper()
+                sex = str(r["SEX"]).upper()
+                inactive = -1 if str(r.get("INACTIVE", "")).strip().upper() == "YES" else 0
+                section = str(r["SECTION"]) if pd.notna(r.get("SECTION")) and str(r["SECTION"]).strip() else ""
+                prem_no = str(r["PREM NO"]) if pd.notna(r.get("PREM NO")) and str(r["PREM NO"]).strip() else None
+                full_name = f"{first} {middle} {surname}"
+                row_offset = excel_row_idx + 2
 
-                section_id = CLASS_ID + section[-1].upper() if section else None
-                # REMOVED is_boarding FIELD
-                pupil_records.append((
-                    pupil_id, first.replace("''", "'"), middle.replace("''", "'"), surname.replace("''", "'"),
-                    sex, inactive, section_id, prem_no
-                ))
+                skip_reason = None
+                if self.name_exists(cur, first.replace("''", "'"), middle.replace("''", "'"), surname.replace("''", "'")):
+                    skip_reason = "Duplicate Name"
+                    stats["skipped"] += 1
+                    stats["skip_reasons"]["duplicate_name"] += 1
+                    for c in range(2, 10): ws.cell(row=row_offset, column=c).fill = self.RED_FILL
+                else:
+                    stats["inserted"] += 1
+                    ws.cell(row=row_offset, column=21).value = pupil_id
+                    for c in range(2, 10): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
 
-                admn_no = str(r["ADMISSION NO"]) if pd.notna(r.get("ADMISSION NO")) else None
-                entrance_mode = self.escape_single_quote(r.get("ENTRANCE MODE", "DIRECT")).upper()
-                former_school = self.escape_single_quote(r.get("FORMER SCHOOL", "")).upper().replace("''", "'") if pd.notna(r.get("FORMER SCHOOL")) else None
-                admission_records.append((pupil_id, admn_no, entrance_mode, former_school))
-                for c in range(10, 13): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
+                    section_id = CLASS_ID + section[-1].upper() if section else None
 
-                dob = r.get("DATE OF BIRTH") if pd.notna(r.get("DATE OF BIRTH")) else None
-                parent_type = str(r.get("RELATIONSHIP", "")).strip().upper()
-                parent_name = self.escape_single_quote(r.get("PARENT NAME", ""))
-                occupation = self.escape_single_quote(r.get("OCCUPATION", ""))
-                phone1 = self.clean_phone(r.get("PHONE NUMBER"))
-                phone2 = self.clean_phone(r.get("ALTERNATIVE PHONE"))
-                gurdian_rel = self.escape_single_quote(r.get("IF GUARDIAN SPECIFY", ""))
+                    # 1. Academic Info
+                    pupil_records.append((
+                        pupil_id, first.replace("''", "'"), middle.replace("''", "'"), surname.replace("''", "'"),
+                        sex, inactive, section_id, prem_no
+                    ))
 
-                fam = {k: None for k in family_keys}
-                fam["pupil_id"] = pupil_id
-                fam["date_of_birth"] = dob
+                    # 2. Admission
+                    admn_no = str(r["ADMISSION NO"]) if pd.notna(r.get("ADMISSION NO")) else None
+                    entrance_mode = self.escape_single_quote(r.get("ENTRANCE MODE", "DIRECT")).upper()
+                    former_school = self.escape_single_quote(r.get("FORMER SCHOOL", "")).upper().replace("''", "'") if pd.notna(r.get("FORMER SCHOOL")) else None
+                    admission_records.append((pupil_id, admn_no, entrance_mode, former_school))
+                    for c in range(10, 13): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
 
-                if parent_type == "FATHER":
-                    fam.update({"father_name": parent_name or f"{middle} {surname}", "father_occupation": occupation,
-                               "father_phone": phone1, "father_phone_alternative": phone2,
-                               "parent_name": parent_name or f"{middle} {surname}", "parent_relationship": "FATHER",
-                               "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
-                elif parent_type == "MOTHER":
-                    fam.update({"mother_name": parent_name, "mother_occupation": occupation,
-                               "mother_phone": phone1, "mother_phone_alternative": phone2,
-                               "parent_name": parent_name, "parent_relationship": "MOTHER",
-                               "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
-                elif parent_type == "GUARDIAN" or (not parent_type and (phone1 or phone2)):
-                    rel = gurdian_rel or "GUARDIAN"
-                    fam.update({"gurdian_name": parent_name, "gurdian_occupation": occupation,
-                               "gurdian_relationship": rel, "gurdian_phone": phone1, "gurdian_phone_alternative": phone2,
-                               "parent_name": parent_name, "parent_relationship": rel,
-                               "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
+                    # 3. Family Info
+                    dob = r.get("DATE OF BIRTH") if pd.notna(r.get("DATE OF BIRTH")) else None
+                    parent_type = str(r.get("RELATIONSHIP", "")).strip().upper()
+                    parent_name = self.escape_single_quote(r.get("PARENT NAME", ""))
+                    occupation = self.escape_single_quote(r.get("OCCUPATION", ""))
+                    phone1 = self.clean_phone(r.get("PHONE NUMBER"))
+                    phone2 = self.clean_phone(r.get("ALTERNATIVE PHONE"))
+                    gurdian_rel = self.escape_single_quote(r.get("IF GUARDIAN SPECIFY", ""))
 
-                family_records.append([fam[k] for k in family_keys])
-                for c in range(13, 20): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
+                    fam = {k: None for k in family_keys}
+                    fam["pupil_id"] = pupil_id
+                    fam["date_of_birth"] = dob
 
-            status = "[red]SKIPPED[/red]" if skip_reason else "[green]INSERTED[/green]"
-            table.add_row(str(serial), pupil_id if not skip_reason else "—",
-                        full_name[:27] + ("…" if len(full_name) > 27 else ""), sex, CLASS_ID, section or "—", status)
-            serial += 1
+                    if parent_type == "FATHER":
+                        fam.update({"father_name": parent_name or f"{middle} {surname}", "father_occupation": occupation,
+                                   "father_phone": phone1, "father_phone_alternative": phone2,
+                                   "parent_name": parent_name or f"{middle} {surname}", "parent_relationship": "FATHER",
+                                   "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
+                    elif parent_type == "MOTHER":
+                        fam.update({"mother_name": parent_name, "mother_occupation": occupation,
+                                   "mother_phone": phone1, "mother_phone_alternative": phone2,
+                                   "parent_name": parent_name, "parent_relationship": "MOTHER",
+                                   "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
+                    elif parent_type == "GUARDIAN" or (not parent_type and (phone1 or phone2)):
+                        rel = gurdian_rel or "GUARDIAN"
+                        fam.update({"gurdian_name": parent_name, "gurdian_occupation": occupation,
+                                   "gurdian_relationship": rel, "gurdian_phone": phone1, "gurdian_phone_alternative": phone2,
+                                   "parent_name": parent_name, "parent_relationship": rel,
+                                   "parent_occupation": occupation, "parent_phone": phone1, "parent_phone_alternative": phone2})
 
-        self.console.print(table)
+                    family_records.append([fam[k] for k in family_keys])
+                    for c in range(13, 20): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
 
-        # INSERT DB - ADDED TQDM WITH BATCHES FOR BEAUTIFUL PROGRESS
-        self.console.print("[bold green]Inserting into database...[/bold green]")
+                    # 4. Health Info – only pupil_id (one-to-many)
+                    health_records.append((pupil_id,))
 
-        if pupil_records:
-            batch_size = 10
-            with tqdm(total=len(pupil_records), desc="Pupil records", unit="record") as pbar:
-                for i in range(0, len(pupil_records), batch_size):
-                    batch = pupil_records[i:i + batch_size]
-                    cur.executemany("""INSERT INTO [tbl_pupil_academic_info]
-                        (pupil_id, first_name, middle_name, surname, sex, inactive, section_id, prem_no)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", batch)
-                    conn.commit()
-                    pbar.update(len(batch))
+                status = "[red]SKIPPED[/red]" if skip_reason else "[green]INSERTED[/green]"
+                table.add_row(str(serial), pupil_id if not skip_reason else "—",
+                            full_name[:27] + ("…" if len(full_name) > 27 else ""), sex, CLASS_ID, section or "—", status)
+                serial += 1
 
-        if admission_records:
-            batch_size = 10
-            with tqdm(total=len(admission_records), desc="Admission records", unit="record") as pbar:
-                for i in range(0, len(admission_records), batch_size):
-                    batch = admission_records[i:i + batch_size]
-                    cur.executemany("""INSERT INTO [tbl_pupil_admission]
-                        (pupil_id, admn_no, entrance_mode, former_school) VALUES (?, ?, ?, ?)""", batch)
-                    conn.commit()
-                    pbar.update(len(batch))
+            self.console.print(table)
 
-        if family_records:
-            batch_size = 10
-            with tqdm(total=len(family_records), desc="Family records", unit="record") as pbar:
-                used = [c for i, c in enumerate(family_keys) if c in ("pupil_id", "date_of_birth") or any(rec[i] for rec in family_records)]
+            # FAST BATCH INSERTS – NOW SAFE BECAUSE RELATIONSHIPS ARE CORRECT
+            batch_size = 20
+
+            if pupil_records:
+                with tqdm(total=len(pupil_records), desc="Inserting Academic Info", unit="rec") as pbar:
+                    for i in range(0, len(pupil_records), batch_size):
+                        cur.executemany("""INSERT INTO [tbl_pupil_academic_info]
+                            (pupil_id, first_name, middle_name, surname, sex, inactive, section_id, prem_no)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", pupil_records[i:i+batch_size])
+                        conn.commit()
+                        pbar.update(len(pupil_records[i:i+batch_size]))
+
+            if admission_records:
+                print("\n")
+                with tqdm(total=len(admission_records), desc="Inserting Admission", unit="rec") as pbar:
+                    for i in range(0, len(admission_records), batch_size):
+                        cur.executemany("""INSERT INTO [tbl_pupil_admission]
+                            (pupil_id, admn_no, entrance_mode, former_school) VALUES (?, ?, ?, ?)""",
+                            admission_records[i:i+batch_size])
+                        conn.commit()
+                        pbar.update(len(admission_records[i:i+batch_size]))
+
+            if family_records:
+                print("\n")
+                used = [c for i, c in enumerate(family_keys) if any(rec[i] for rec in family_records)]
                 sql = f"INSERT INTO [tbl_pupil_family_info] ({', '.join(f'[{c}]' for c in used)}) VALUES ({', '.join('?' * len(used))})"
-                
-                for i in range(0, len(family_records), batch_size):
-                    batch = family_records[i:i + batch_size]
-                    data = [[r[family_keys.index(c)] for c in used] for r in batch]
-                    cur.executemany(sql, data)
-                    conn.commit()
-                    pbar.update(len(batch))
+                data_batches = [[r[family_keys.index(c)] for c in used] for r in family_records]
+                with tqdm(total=len(data_batches), desc="Inserting Family Info", unit="rec") as pbar:
+                    for i in range(0, len(data_batches), batch_size):
+                        cur.executemany(sql, data_batches[i:i+batch_size])
+                        conn.commit()
+                        pbar.update(len(data_batches[i:i+batch_size]))
 
-        # SAVE
-        timestamp = datetime.now().strftime("%d%b%Y %H%M%S")
-        new_file = self.SAVE_FOLDER / f"UPLOADED Form {CLASS_ID} {timestamp}.xlsx"
-        wb.save(new_file)
+            if health_records:
+                print("\n")
+                with tqdm(total=len(health_records), desc="Inserting Health Records", unit="rec") as pbar:
+                    for i in range(0, len(health_records), batch_size):
+                        cur.executemany("INSERT INTO [tbl_pupil_health_info] (pupil_id) VALUES (?)", health_records[i:i+batch_size])
+                        conn.commit()
+                        pbar.update(len(health_records[i:i+batch_size]))
 
-        # SUMMARY
-        elapsed = time.time() - start_time
-        mins, secs = divmod(elapsed, 60)
-        summary = Table(title="IMPORT SUMMARY", box=box.ROUNDED)
-        summary.add_column("Metric", style="bold cyan")
-        summary.add_column("Value", style="bold green")
-        for k, v in [("Total Pupils", str(stats["total"])), ("Inserted", str(stats["inserted"])),
-                     ("Skipped", str(stats["skipped"])), (" • Duplicate Name", str(stats["skip_reasons"]["duplicate_name"])),
-                     ("Admission Records", str(len(admission_records))), ("Family Records", str(len(family_records))),
-                     ("Time Taken", f"{int(mins)} min {secs:.1f} sec"), ("Saved File", new_file.name)]:
-            summary.add_row(k, v)
+            # SAVE EXCEL
+            timestamp = datetime.now().strftime("%d%b%Y %H%M%S")
+            new_file = self.SAVE_FOLDER / f"UPLOADED Form {CLASS_ID} {timestamp}.xlsx"
+            wb.save(new_file)
 
-        self.console.rule("[bold green]IMPORT COMPLETED[/bold green]")
-        self.console.print(summary)
-        conn.close()
+            # SUMMARY
+            elapsed = time.time() - start_time
+            mins, secs = divmod(elapsed, 60)
+            summary = Table(title="IMPORT SUMMARY", box=box.ROUNDED)
+            summary.add_column("Metric", style="bold cyan")
+            summary.add_column("Value", style="bold green")
+            summary.add_row("Total Pupils", str(stats["total"]))
+            summary.add_row("Inserted", str(stats["inserted"]))
+            summary.add_row("Skipped", str(stats["skipped"]))
+            summary.add_row(" • Duplicate Name", str(stats["skip_reasons"]["duplicate_name"]))
+            summary.add_row("Academic Records", str(len(pupil_records)))
+            summary.add_row("Admission Records", str(len(admission_records)))
+            summary.add_row("Family Records", str(len(family_records)))
+            summary.add_row("Health Records", str(len(health_records)))
+            summary.add_row("Time Taken", f"{int(mins)} min {secs:.1f} sec")
+            summary.add_row("Saved File", new_file.name)
 
+            self.console.rule("[bold green]IMPORT COMPLETED SUCCESSFULLY[/bold green]")
+            self.console.print(summary)
+
+        except Exception as e:
+            conn.rollback()
+            self.console.print(f"[bold red]FATAL ERROR: {e}[/bold red]")
+            raise
+        finally:
+            conn.close()
 
 # USAGE — ALL IN __INIT__ — ONE EXCEL FILE
 if __name__ == "__main__":
