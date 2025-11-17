@@ -1,5 +1,6 @@
 from .alevel.ranking import process_exam as AlevelProcessor
 from .olevel.processDS import OlevelProcessor
+from .primary.process import ExamProcessor as PrimaryProcessor
 import pyodbc
 from datetime import datetime
 
@@ -68,7 +69,9 @@ class TimeTravelProcessor:
                 INNER JOIN tbl_student_exam_results ser ON se.exam_id = ser.exam_id
                 ORDER BY se.exam_start DESC
             """
-            
+            if self.level=="primary":
+                query=query.replace("student","pupil")
+                
             cursor.execute(query)
             results = cursor.fetchall()
             
@@ -93,7 +96,8 @@ class TimeTravelProcessor:
             processor = AlevelProcessor(exam_id=exam_data.exam_id, dbpath=self.db_path)
             processor.time_travel_export()
         elif self.level == "primary":
-            raise NotImplementedError("Primary level not implemented")
+            processor=PrimaryProcessor(db_path=self.db_path,exam_id=exam_data.exam_id)
+            processor.complete_exam()
         else:
             raise ValueError(f"Invalid level: {self.level}")
 

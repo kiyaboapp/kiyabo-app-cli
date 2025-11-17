@@ -140,22 +140,32 @@ def process(
     sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
 ):
     print_banner()
-    level = level.lower()
-    if level == "alevel":
-        alevel_process_exam(exam_id, db_path, include_INC=include_inc)
-        console.print("[green]PROCESSING COMPLETE[/]")
-    
-    elif level == "olevel":
-        if sort_cols:
-            sort_cols_list = [col.strip() for col in sort_cols.split(",")]
-        else:
-            sort_cols_list = None
+    try:
+        level = level.lower()
+        if level == "alevel":
+            alevel_process_exam(exam_id, db_path, include_INC=include_inc)
+            console.print("[green]PROCESSING COMPLETE[/]")
+        
+        elif level == "olevel":
+            if sort_cols:
+                sort_cols_list = [col.strip() for col in sort_cols.split(",")]
+            else:
+                sort_cols_list = None
 
-        processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc)
-        processor.run()
-        console.print("[green]PROCESSING COMPLETE[/]")
-    else:
-        console.print(f"[yellow]process not implemented for {level}[/]")
+            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc)
+            processor.run()
+            console.print("[green]PROCESSING COMPLETE[/]")
+        
+        elif level == "primary":
+            processor = PrimaryProcessor(exam_id=exam_id, db_path=db_path)
+            processor.complete_exam()
+            console.print("[green]PROCESSING COMPLETE[/]")
+        else:
+            console.print(f"[yellow]process not implemented for {level}[/]")
+        
+
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
