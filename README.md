@@ -1,4 +1,5 @@
-# KIYABO APP  
+# KIYABO APP
+
 **Tanzania School Information System CLI**  
 *Professional, Fast, Colorful, Standalone, and Ready for Primary, O-Level, A-Level*
 
@@ -8,36 +9,37 @@
 
 KIYABO APP is a command-line tool designed to manage student exam results in Tanzanian schools. It supports:
 
-- Uploading results from Excel to Access  
-- Exporting ranked results to formatted Excel  
-- Processing & Ranking exams with INC handling  
-- Standalone 32-bit & 64-bit EXEs (no Python required)  
-- Zero dependencies outside your local Python folders  
-- Full-color output with ASCII banner  
-- Automatic GitHub releases on every tag  
+- Uploading results from Excel to Access
+- Exporting ranked results to formatted Excel
+- Processing and ranking exams with INC handling
+- Standalone 32-bit and 64-bit EXEs (no Python required)
+- Zero dependencies outside your local Python folders
+- Full-color output with ASCII banner
+- Automatic GitHub releases on every tag
 - Custom icon (icon.ico) embedded in EXEs
 
 ---
 
 ## Project Structure
 
+```
 c:\KiyaboAppPython\
 │
-├───cli/                          ← All CLI logic
+├── cli/                          ← All CLI logic
 │   ├── __init__.py
 │   ├── main.py                   ← Typer CLI entry point
 │   ├── colors.py                 ← Rich console instance
 │   ├── banner.py                 ← Big colored ASCII banner
 │   │
-│   └───alevel/                   ← A-Level modules (extend to others)
+│   └── alevel/                   ← A-Level modules (extend to others)
 │       ├── __init__.py
 │       ├── exporter.py           ← StudentExamExporter class
 │       ├── importer.py           ← ExamDataImporter class
 │       └── ranking.py            ← process_exam() function
 │
-├───python32/                     ← 32-bit Python + dependencies (ignored)
-├───python64/                     ← 64-bit Python + dependencies (ignored)
-├───downloads/                    ← Local files (ignored)
+├── python32/                     ← 32-bit Python + dependencies (ignored)
+├── python64/                     ← 64-bit Python + dependencies (ignored)
+├── downloads/                    ← Local files (ignored)
 │
 ├── run_cli.py                    ← Fixes import path for `cli` package
 ├── kiyabo32.bat                  ← Launch with 32-bit Python
@@ -47,37 +49,47 @@ c:\KiyaboAppPython\
 ├── icon.ico                      ← Custom app icon (embedded in EXEs)
 │
 ├── .gitignore
-├── README.txt                    ← This file
+├── README.md                     ← This file
 └── .github/
     └── workflows/
         └── release.yml           ← Auto-build & release EXEs - NOW INCLUDES ICON
+```
 
 ---
 
 ## Quick Start
 
-### 1. Run Locally
+### Run Locally
 
+```cmd
 cd c:\KiyaboAppPython
+```
 
-#### 64-bit
+**64-bit:**
+```cmd
 kiyabo64.bat --help
+```
 
-#### 32-bit
+**32-bit:**
+```cmd
 kiyabo32.bat --help
+```
 
-> You'll see a colorful ASCII banner and full help.
+You'll see a colorful ASCII banner and full help.
 
 ---
 
 ## CLI Commands
 
+```cmd
 kiyabo <command> <level> [options]
+```
 
 ### Supported Levels
-| Level     | Status       |
-|-----------|--------------|
-| alevel    | Fully Working     |
+
+| Level     | Status              |
+|-----------|---------------------|
+| alevel    | Fully Working       |
 | olevel    | Ready for extension |
 | primary   | Ready for extension |
 
@@ -85,39 +97,45 @@ kiyabo <command> <level> [options]
 
 ### upload – Import Excel to Access
 
-kiyabo upload alevel \
-  --exam-id MID520250825 \
-  --excel "C:\Data\Input_Results.xlsx" \
+```cmd
+kiyabo upload alevel ^
+  --exam-id MID520250825 ^
+  --excel "C:\Data\Input_Results.xlsx" ^
   --db "C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb"
+```
 
-- Uses ExamDataImporter.import_exam_data()
+- Uses `ExamDataImporter.import_exam_data()`
 - Returns success/failure
 
 ---
 
 ### export – Export Ranked Results to Excel
 
-kiyabo export alevel \
-  --exam-id MID520250825 \
-  --db "C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb" \
-  --comb \
-  --top 20 \
+```cmd
+kiyabo export alevel ^
+  --exam-id MID520250825 ^
+  --db "C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb" ^
+  --comb ^
+  --top 20 ^
   --bottom 20
+```
 
-- Instantiates StudentExamExporter(...)
-- Output: C:\Kiyabo App\Results\Exam_Results_MID520250825.xlsx
+- Instantiates `StudentExamExporter(...)`
+- Output: `C:\Kiyabo App\Results\Exam_Results_MID520250825.xlsx`
 - Includes formatting, rankings, top/bottom students
 
 ---
 
-### process – Rank & Process Exam
+### process – Rank and Process Exam
 
-kiyabo process alevel \
-  --exam-id MID520250825 \
-  --db "C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb" \
+```cmd
+kiyabo process alevel ^
+  --exam-id MID520250825 ^
+  --db "C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb" ^
   --no-inc
+```
 
-- Calls process_exam(exam_id, db_path, include_INC=False)
+- Calls `process_exam(exam_id, db_path, include_INC=False)`
 - Handles INC as penalty
 
 ---
@@ -126,20 +144,24 @@ kiyabo process alevel \
 
 ### Generate (once) – includes icon.ico
 
+```cmd
 python32\python.exe -m PyInstaller --name kiyabo32 --onefile --console --icon=icon.ico run_cli.py
 python64\python.exe -m PyInstaller --name kiyabo64 --onefile --console --icon=icon.ico run_cli.py
 
 ren kiyabo32.spec build_32.spec
 ren kiyabo64.spec build_64.spec
+```
 
 ### Build anytime (icon already in .spec)
 
+```cmd
 python32\python.exe -m PyInstaller --noconfirm build_32.spec
 python64\python.exe -m PyInstaller --noconfirm build_64.spec
+```
 
-> Output:  
-> - dist\kiyabo32.exe (with your icon)  
-> - dist\kiyabo64.exe (with your icon)
+**Output:**
+- `dist\kiyabo32.exe` (with your icon)
+- `dist\kiyabo64.exe` (with your icon)
 
 Console stays open – full color, banner, help.
 
@@ -148,6 +170,8 @@ Console stays open – full color, banner, help.
 ## .spec Files – NOW INCLUDE ICON
 
 ### build_32.spec
+
+```python
 a = Analysis(
     ['run_cli.py'],
     pathex=[os.path.abspath(".")],
@@ -178,8 +202,11 @@ exe = EXE(
     icon='icon.ico',   ← ICON ADDED
     disable_windowed_traceback=False,
 )
+```
 
 ### build_64.spec
+
+```python
 a = Analysis(
     ['run_cli.py'],
     pathex=[os.path.abspath(".")],
@@ -210,12 +237,15 @@ exe = EXE(
     icon='icon.ico',   ← ICON ADDED
     disable_windowed_traceback=False,
 )
+```
 
 ---
 
 ## GitHub Auto-Release – NOW INCLUDES ICON
 
 ### .github/workflows/release.yml
+
+```yaml
 name: Build & Release
 
 on:
@@ -263,51 +293,61 @@ jobs:
           files: |
             kiyabo32/kiyabo32.exe
             kiyabo64/kiyabo64.exe
+```
 
 ---
 
 ## Dependencies (Already Installed in python32 / python64)
 
-typer[all]
-rich==14.2.0
-pyodbc
-openpyxl
-pandas
-numpy
-pywin32
-pyinstaller
+- `typer[all]`
+- `rich==14.2.0`
+- `pyodbc`
+- `openpyxl`
+- `pandas`
+- `numpy`
+- `pywin32`
+- `pyinstaller`
 
-> No pip install required if already in your Python folders.
+No pip install required if already in your Python folders.
 
 ---
 
 ## Extending to primary or olevel
 
-1. Create folders
-   cli/primary/
-   cli/olevel/
+**1. Create folders:**
+```
+cli/primary/
+cli/olevel/
+```
 
-2. Add files
-   cli/primary/exporter.py
-   cli/primary/importer.py
-   cli/primary/ranking.py
+**2. Add files:**
+```
+cli/primary/exporter.py
+cli/primary/importer.py
+cli/primary/ranking.py
+```
 
-3. Implement
-   - process_exam(exam_id, db_path, include_INC)
-   - class ExamDataImporter: import_exam_data(...)
-   - class StudentExamExporter(...)
+**3. Implement:**
+- `process_exam(exam_id, db_path, include_INC)`
+- `class ExamDataImporter: import_exam_data(...)`
+- `class StudentExamExporter(...)`
 
-4. Import in cli/main.py
-   from .primary.ranking import process_exam as primary_process_exam
+**4. Import in cli/main.py:**
+```python
+from .primary.ranking import process_exam as primary_process_exam
+```
 
-5. Update commands
-   if level == "primary":
-       primary_process_exam(...)
+**5. Update commands:**
+```python
+if level == "primary":
+    primary_process_exam(...)
+```
 
 ---
 
 ## .gitignore
 
+```gitignore
 # Folders
 downloads/
 python32/
@@ -328,33 +368,38 @@ build/
 .vscode/
 .idea/
 *.swp
+```
 
 ---
 
 ## Troubleshooting
 
 | Problem | Solution |
-|-------|----------|
-| ModuleNotFoundError: cli | Use kiyabo64.bat – it sets sys.path |
-| EXE has no console | --console=True in .spec |
-| Icon not showing | Ensure icon.ico is in root and .spec has icon='icon.ico' |
-| process_exam not found | Must exist in ranking.py |
-| ExamDataImporter missing | Must be a class with import_exam_data() |
+|---------|----------|
+| ModuleNotFoundError: cli | Use `kiyabo64.bat` – it sets sys.path |
+| EXE has no console | `--console=True` in .spec |
+| Icon not showing | Ensure `icon.ico` is in root and .spec has `icon='icon.ico'` |
+| process_exam not found | Must exist in `ranking.py` |
+| ExamDataImporter missing | Must be a class with `import_exam_data()` |
 | Colors not showing | Use Windows Terminal or ConEmu |
 
 ---
 
 ## Testing Your Modules (Manual)
 
-# Test ranking
+**Test ranking:**
+```cmd
 python64\python.exe cli\alevel\ranking.py MID520250825 --dbpath "C:\path\to\db.accdb"
+```
 
-# Test importer
+**Test importer:**
+```python
 python64\python.exe -c "
 from cli.alevel.importer import ExamDataImporter
 importer = ExamDataImporter()
 importer.import_exam_data('TEST', 'input.xlsx', 'db.accdb')
 "
+```
 
 ---
 
@@ -362,8 +407,10 @@ importer.import_exam_data('TEST', 'input.xlsx', 'db.accdb')
 
 Use Semantic Versioning:
 
+```cmd
 git tag v1.0.0
 git push origin v1.0.0
+```
 
 ---
 
@@ -373,4 +420,4 @@ MIT © Kiyabo App Team
 
 ---
 
-Made with precision for Tanzanian schools.
+**Made with precision for Tanzanian schools.**
