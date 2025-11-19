@@ -46,7 +46,7 @@ class AlevelStudentImporter:
 
         # LOAD EXCEL
         console.print(f"[bold blue]Loading Excel:[/bold blue] {self.excel_path.name}")
-        self.df = pd.read_excel(self.excel_path, dtype=str).fillna("")
+        self.df = pd.read_excel(self.excel_path, dtype=str,engine="openpyxl").fillna("")
         self.wb = openpyxl.load_workbook(self.excel_path)
         self.ws = self.wb.active
 
