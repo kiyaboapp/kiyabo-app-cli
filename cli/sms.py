@@ -11,8 +11,11 @@ from openpyxl.styles import PatternFill
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
 from rich.prompt import Prompt, Confirm, IntPrompt
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rich.layout import Layout
+from rich import box
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from tabulate import tabulate
@@ -59,128 +62,211 @@ class SMSSender:
         """Clear the console screen"""
         os.system('cls' if os.name == 'nt' else 'clear')
         
-    def show_header(self):
-        """Display elegant header"""
-        self.clear_screen()
-        self.console.print("\n")
-        self.console.print("🎯 SMS SENDING SYSTEM", style="bold cyan")
-        self.console.print("MyPhoneExplorer Automation", style="dim")
+    def show_banner(self):
+        """Display the ASCII art banner with colors"""
+        banner = r'''
+░██     ░██ ░██                      ░██                        ░██████   ░███     ░███   ░██████   
+░██    ░██                           ░██                       ░██   ░██  ░████   ░████  ░██   ░██  
+░██   ░██   ░██░██    ░██  ░██████   ░████████   ░███████     ░██         ░██░██ ░██░██ ░██         
+░███████    ░██░██    ░██       ░██  ░██    ░██ ░██    ░██     ░████████  ░██ ░████ ░██  ░████████  
+░██   ░██   ░██░██    ░██  ░███████  ░██    ░██ ░██    ░██            ░██ ░██  ░██  ░██         ░██ 
+░██    ░██  ░██░██   ░███ ░██   ░██  ░███   ░██ ░██    ░██     ░██   ░██  ░██       ░██  ░██   ░██  
+░██     ░██ ░██ ░█████░██  ░█████░██ ░██░█████   ░███████       ░██████   ░██       ░██   ░██████   
+                      ░██                                                                           
+                ░███████                                                                                                                                                                        
+ '''
+
+        self.console.print(banner, style="bold cyan")
         
-        # Show current configuration
-        config_table = [
-            ["Excel File", self.excel_path or "Not loaded"],
-            ["Delay Range", f"{self.delay_min}-{self.delay_max} seconds"],
-            ["Show Window", "Yes" if self.show_window else "No"],
-            ["Test Mode", "Yes" if self.test_mode else "No"]
-        ]
-        self.console.print("\n⚙️  Current Configuration:")
-        config_display = tabulate(config_table, tablefmt="simple")
-        self.console.print(config_display)
-        self.console.print("\n")
+    def show_header(self):
+        """Display elegant header with banner"""
+        self.clear_screen()
+        self.show_banner()
+        
+        # Show current configuration in a colorful panel
+        config_text = f"""[bold yellow]📁 Excel File:[/bold yellow] [cyan]{os.path.basename(self.excel_path) if self.excel_path else 'Not loaded'}[/cyan]
+        [bold yellow]⏱️  Delay Range:[/bold yellow] [green]{self.delay_min}-{self.delay_max} seconds[/green]
+        [bold yellow]🪟 Show Window:[/bold yellow] [magenta]{'Yes' if self.show_window else 'No'}[/magenta]
+        [bold yellow]🧪 Test Mode:[/bold yellow] [blue]{'Yes' if self.test_mode else 'No'}[/blue]"""
+        
+        config_panel = Panel(
+            config_text,
+            title="[bold white]⚙️  Current Configuration[/bold white]",
+            border_style="bright_blue",
+            box=box.DOUBLE
+        )
+        self.console.print(config_panel)
+
+
         
     def show_menu(self):
-        """Display main menu"""
-        self.console.print("1. ", style="bold cyan", end="")
-        self.console.print("Load Excel File & Preview", style="white")
+        """Display colorful main menu with descriptions"""
+        menu_items = [
+            ("1", "📂 Load Excel File & Preview", "Load your SMS list and see a preview of messages"),
+            ("2", "🔍 Check System Status", "Verify MyPhoneExplorer installation and connection"),
+            ("3", "🔌 Connect to Phone", "Start MyPhoneExplorer and connect to your device"),
+            ("4", "📤 Send SMS Messages", "Start sending messages from your Excel file"),
+            ("5", "🧪 Test SMS Sending", "Send a test message to verify setup"),
+            ("6", "⚙️  Adjust Settings", "Change delay times and window settings"),
+            ("7", "📊 View Statistics", "See detailed statistics from previous sends"),
+            ("0", "🚪 Exit Application", "Close the application")
+        ]
         
-        self.console.print("2. ", style="bold cyan", end="")
-        self.console.print("Check MyPhoneExplorer Status", style="white")
+        # Create a fancy menu
+        self.console.print("╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_blue")
+        self.console.print("║                          MAIN MENU                                    ║", style="bold bright_blue")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_blue")
+        self.console.print()
         
-        self.console.print("3. ", style="bold cyan", end="")
-        self.console.print("Connect MyPhoneExplorer", style="white")
+        for number, title, description in menu_items:
+            # Colorful menu items
+            self.console.print(f"  [{number}] ", style="bold bright_yellow", end="")
+            self.console.print(f"{title}", style="bold white")
+            # self.console.print(f"      [dim italic]{description}[/dim italic]")
+            # self.console.print()
         
-        self.console.print("4. ", style="bold cyan", end="")
-        self.console.print("Send SMS Messages", style="white")
-        
-        self.console.print("5. ", style="bold cyan", end="")
-        self.console.print("Test SMS Sending", style="white")
-        
-        self.console.print("6. ", style="bold cyan", end="")
-        self.console.print("Adjust Settings", style="white")
-        
-        self.console.print("7. ", style="bold cyan", end="")
-        self.console.print("View Statistics", style="white")
-        
-        self.console.print("0. ", style="bold cyan", end="")
-        self.console.print("Exit", style="white")
-        
-        self.console.print("\nSelect an option: ", style="bold yellow", end="")
+        self.console.print("─" * 75, style="dim bright_blue")
+        self.console.print("\n💡 [bold yellow]Tip:[/bold yellow] [dim]Choose an option by entering its number[/dim]\n")
+        self.console.print("👉 [bold bright_cyan]Enter your choice:[/bold bright_cyan] ", end="")
+    
+
     
     def adjust_settings(self):
-        """Allow user to adjust settings"""
-        self.console.print("\n⚙️  Adjust Settings", style="bold")
-        self.console.print("=" * 50, style="dim")
+        """Allow user to adjust settings with better UX"""
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold magenta")
+        self.console.print("║                    ⚙️  ADJUST SETTINGS                                ║", style="bold magenta")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold magenta")
+        
+        # Show current settings
+        current_settings = Panel(
+            f"[yellow]Current Delay:[/yellow] [cyan]{self.delay_min}-{self.delay_max} seconds[/cyan]\n"
+            f"[yellow]Window Visibility:[/yellow] [cyan]{'Shown' if self.show_window else 'Hidden'}[/cyan]",
+            title="[bold white]Current Configuration[/bold white]",
+            border_style="yellow"
+        )
+        self.console.print(current_settings)
+
         
         # Adjust delay settings
-        self.console.print(f"\nCurrent delay: {self.delay_min}-{self.delay_max} seconds")
-        new_min = IntPrompt.ask("Enter minimum delay in seconds", default=self.delay_min)
-        new_max = IntPrompt.ask("Enter maximum delay in seconds", default=self.delay_max)
+        self.console.print("⏱️  [bold cyan]Delay Settings[/bold cyan]", style="bold")
+        self.console.print("   [dim]The delay between each SMS helps avoid being blocked by the carrier[/dim]\n")
+        
+        new_min = IntPrompt.ask(
+            "   [yellow]Enter minimum delay in seconds[/yellow]",
+            default=self.delay_min
+        )
+        new_max = IntPrompt.ask(
+            "   [yellow]Enter maximum delay in seconds[/yellow]",
+            default=self.delay_max
+        )
         
         if new_min > new_max:
-            self.console.print("❌ Minimum cannot be greater than maximum", style="red")
+            self.console.print("\n❌ [bold red]Error:[/bold red] Minimum cannot be greater than maximum", style="red")
         else:
             self.delay_min = new_min
             self.delay_max = new_max
-            self.console.print(f"✅ Delay set to {self.delay_min}-{self.delay_max} seconds", style="green")
+            self.console.print(f"\n✅ [bold green]Delay updated to {self.delay_min}-{self.delay_max} seconds[/bold green]")
+        
+        self.console.print()
         
         # Adjust window visibility
-        current_window_setting = "shown" if self.show_window else "hidden"
-        self.console.print(f"\nCurrent window setting: {current_window_setting}")
-        self.show_window = Confirm.ask("Show MyPhoneExplorer window during sending?")
+        self.console.print("🪟 [bold cyan]Window Visibility[/bold cyan]", style="bold")
+        self.console.print("   [dim]Choose whether to show or hide MyPhoneExplorer window during sending[/dim]\n")
         
-        window_status = "shown" if self.show_window else "hidden"
-        self.console.print(f"✅ Window will be {window_status}", style="green")
+        self.show_window = Confirm.ask(
+            "   [yellow]Show MyPhoneExplorer window?[/yellow]",
+            default=self.show_window
+        )
         
-        # Show updated configuration
-        self.console.print("\n📋 Updated Configuration:", style="bold")
-        config_table = [
-            ["Delay Range", f"{self.delay_min}-{self.delay_max} seconds"],
-            ["Show Window", "Yes" if self.show_window else "No"]
-        ]
-        config_display = tabulate(config_table, tablefmt="grid")
-        self.console.print(config_display)
+        window_status = "[green]shown[/green]" if self.show_window else "[yellow]hidden[/yellow]"
+        self.console.print(f"\n✅ [bold green]Window will be {window_status}[/bold green]")
+        
+        # Show updated configuration in a panel
+        self.console.print()
+        updated_config = Panel(
+            f"[yellow]Delay Range:[/yellow] [bright_green]{self.delay_min}-{self.delay_max} seconds[/bright_green]\n"
+            f"[yellow]Show Window:[/yellow] [bright_green]{'Yes' if self.show_window else 'No'}[/bright_green]",
+            title="[bold white]✨ Updated Configuration[/bold white]",
+            border_style="bright_green",
+            box=box.DOUBLE
+        )
+        self.console.print(updated_config)
     
     def test_sms_sending(self):
         """Test SMS sending with user-provided number and message"""
-        self.console.print("\n🧪 TEST SMS SENDING", style="bold")
-        self.console.print("=" * 50, style="dim")
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_magenta")
+        self.console.print("║                      🧪 TEST SMS SENDING                              ║", style="bold bright_magenta")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_magenta")
+        
+        self.console.print("\n[dim]This will send a real SMS to verify your setup is working correctly[/dim]\n")
         
         if not self.is_sms_direct_installed():
-            self.console.print("❌ MyPhoneExplorer is not installed", style="red")
+            error_panel = Panel(
+                "[bold red]MyPhoneExplorer is not installed on your system[/bold red]\n"
+                "[yellow]Please install MyPhoneExplorer first to use this feature[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
             return
         
         # Get phone number from user
-        phone_number = Prompt.ask("📞 Enter phone number to test")
+        self.console.print("📞 [bold cyan]Enter Phone Number[/bold cyan]")
+        self.console.print("   [dim]Example: 0712345678 or +255712345678[/dim]")
+        phone_number = Prompt.ask("   [yellow]Phone number[/yellow]")
+        
         normalized_phone = self.normalize_phone(phone_number)
-        self.console.print(f"📞 Normalized phone: {normalized_phone}", style="blue")
+        self.console.print(f"   ✓ Normalized to: [bright_green]{normalized_phone}[/bright_green]\n")
         
         # Get message from user
-        message = Prompt.ask("💬 Enter test message")
+        self.console.print("💬 [bold cyan]Enter Test Message[/bold cyan]")
+        self.console.print("   [dim]Enter the message you want to send[/dim]")
+        message = Prompt.ask("   [yellow]Message[/yellow]")
         
-        # Confirm before sending
-        self.console.print(f"\n📋 Test SMS Details:", style="bold")
-        self.console.print(f"   To: {normalized_phone}")
-        self.console.print(f"   Message: {message}")
+        # Show confirmation panel
+        self.console.print()
+        confirm_panel = Panel(
+            f"[bold yellow]To:[/bold yellow] [bright_cyan]{normalized_phone}[/bright_cyan]\n"
+            f"[bold yellow]Message:[/bold yellow] [white]{message}[/white]",
+            title="[bold white]📋 Test SMS Details[/bold white]",
+            border_style="yellow",
+            box=box.DOUBLE
+        )
+        self.console.print(confirm_panel)
+        self.console.print()
         
-        if not Confirm.ask("\nSend this test SMS?"):
-            self.console.print("❌ Test cancelled", style="yellow")
+        if not Confirm.ask("[bold yellow]Send this test SMS?[/bold yellow]", default=True):
+            self.console.print("\n❌ [yellow]Test cancelled[/yellow]")
             return
         
-        # Send test SMS
-        self.console.print("\n🚀 Sending test SMS...", style="yellow")
+        # Send test SMS with progress indicator
+        self.console.print()
+        with self.console.status("[bold yellow]🚀 Sending test SMS...[/bold yellow]", spinner="dots"):
+            success, result_message = self.try_send_text_sms(normalized_phone, message)
         
-        success, result_message = self.try_send_text_sms(normalized_phone, message)
-        
+        self.console.print()
         if success:
-            self.console.print(f"✅ Test SMS sent successfully!", style="green")
-            self.console.print(f"📝 Result: {result_message}", style="dim")
+            success_panel = Panel(
+                f"[bold bright_green]✅ Test SMS sent successfully![/bold bright_green]\n"
+                f"[dim]{result_message}[/dim]",
+                title="Success",
+                border_style="bright_green",
+                box=box.DOUBLE
+            )
+            self.console.print(success_panel)
         else:
-            self.console.print(f"❌ Test SMS failed!", style="red")
-            self.console.print(f"📝 Error: {result_message}", style="dim")
+            error_panel = Panel(
+                f"[bold red]❌ Test SMS failed![/bold red]\n"
+                f"[yellow]{result_message}[/yellow]",
+                title="Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
     
     def browse_excel_file(self) -> str:
         """Open file dialog to browse for Excel file"""
         try:
+            self.console.print("[dim]Opening file browser...[/dim]")
             file_path = filedialog.askopenfilename(
                 title="Select Excel File",
                 filetypes=[
@@ -190,7 +276,7 @@ class SMSSender:
             )
             return file_path
         except Exception as e:
-            self.console.print(f"❌ File dialog error: {str(e)}", style="red")
+            self.console.print(f"❌ [red]File dialog error: {str(e)}[/red]")
             return ""
     
     def is_sms_direct_installed(self) -> bool:
@@ -210,41 +296,75 @@ class SMSSender:
     
     def connect_myphone_explorer(self) -> bool:
         """Initialize connection to MyPhoneExplorer"""
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_cyan")
+        self.console.print("║                   🔌 CONNECT TO PHONE                                 ║", style="bold bright_cyan")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_cyan")
+        self.console.print()
+        
         if not self.is_sms_direct_installed():
-            self.console.print("\n❌ MyPhoneExplorer is not installed.", style="red")
-            self.console.print("Please install MyPhoneExplorer first.", style="dim")
+            error_panel = Panel(
+                "[bold red]MyPhoneExplorer is not installed[/bold red]\n\n"
+                "[yellow]Please download and install MyPhoneExplorer from:[/yellow]\n"
+                "[cyan]https://www.fjsoft.at/en/[/cyan]",
+                title="❌ Installation Required",
+                border_style="red"
+            )
+            self.console.print(error_panel)
             return False
         
         try:
-            self.console.print("\n🔌 Initializing connection to MyPhoneExplorer...", style="yellow")
+            with self.console.status("[bold yellow]🔌 Connecting to MyPhoneExplorer...[/bold yellow]", spinner="dots"):
+                creation_flags = 0 if self.show_window else subprocess.CREATE_NO_WINDOW
+                args = "action=connect"
+                command = f'"{self.mpe_path}" {args}'
+                
+                process = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    creationflags=creation_flags
+                )
             
-            # Use window setting
-            creation_flags = 0 if self.show_window else subprocess.CREATE_NO_WINDOW
-            
-            args = "action=connect"
-            command = f'"{self.mpe_path}" {args}'
-            
-            process = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=creation_flags
-            )
-            
+            self.console.print()
             if process.returncode == 0:
-                self.console.print("✅ MyPhoneExplorer connected successfully", style="green")
+                success_panel = Panel(
+                    "[bold bright_green]✅ MyPhoneExplorer connected successfully![/bold bright_green]\n"
+                    "[dim]Your phone is now connected and ready to send messages[/dim]",
+                    title="Success",
+                    border_style="bright_green",
+                    box=box.DOUBLE
+                )
+                self.console.print(success_panel)
                 return True
             else:
-                self.console.print("⚠️ MyPhoneExplorer opened but connection may need manual setup", style="yellow")
+                warning_panel = Panel(
+                    "[bold yellow]⚠️  MyPhoneExplorer opened[/bold yellow]\n"
+                    "[dim]Please manually connect your phone in the MyPhoneExplorer window[/dim]",
+                    title="Manual Setup Required",
+                    border_style="yellow"
+                )
+                self.console.print(warning_panel)
                 return True
                 
         except subprocess.TimeoutExpired:
-            self.console.print("✅ MyPhoneExplorer started (timeout reached)", style="green")
+            success_panel = Panel(
+                "[bold green]✅ MyPhoneExplorer started[/bold green]\n"
+                "[dim]The application is now running[/dim]",
+                title="Success",
+                border_style="green"
+            )
+            self.console.print(success_panel)
             return True
         except Exception as e:
-            self.console.print(f"❌ Failed to connect: {str(e)}", style="red")
+            error_panel = Panel(
+                f"[bold red]❌ Connection failed[/bold red]\n"
+                f"[yellow]{str(e)}[/yellow]",
+                title="Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
             return False
     
     def sanitize_sms(self, message: str) -> str:
@@ -259,8 +379,6 @@ class SMSSender:
             return ""
             
         phone = str(phone).strip().replace(" ", "")
-        
-        # Remove any non-digit characters except +
         cleaned_phone = ''.join(c for c in phone if c.isdigit() or c == '+')
         
         if cleaned_phone.startswith('255') and len(cleaned_phone) == 12:
@@ -272,76 +390,99 @@ class SMSSender:
         elif cleaned_phone.startswith('+'):
             return cleaned_phone
         else:
-            return "+255" + cleaned_phone[-9:]  # Take last 9 digits
+            return "+255" + cleaned_phone[-9:]
     
     def load_excel_preview(self) -> bool:
-        """Load Excel file and show preview with FULL messages"""
+        """Load Excel file and show preview"""
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_green")
+        self.console.print("║                📂 LOAD EXCEL FILE & PREVIEW                           ║", style="bold bright_green")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_green")
+        self.console.print()
+        
         if not self.excel_path:
-            self.console.print("\n📁 Select Excel file...", style="bold")
-            self.console.print("1. ", style="cyan", end="")
-            self.console.print("Browse with file dialog", style="white")
-            self.console.print("2. ", style="cyan", end="")
-            self.console.print("Enter path manually", style="white")
-            self.console.print("Choose option: ", style="yellow", end="")
+            self.console.print("[bold cyan]How would you like to load your Excel file?[/bold cyan]\n")
+            self.console.print("  [1] 🗔  [white]Browse with file dialog[/white] [dim](Recommended)[/dim]")
+            self.console.print("  [2] ⌨️  [white]Enter path manually[/white]")
+            self.console.print()
             
-            choice = input().strip()
+            choice = Prompt.ask("[yellow]Choose option[/yellow]", choices=["1", "2"], default="1")
             
             if choice == '1':
-                # Use Tkinter file dialog
-                self.console.print("🗔 Opening file dialog...", style="dim")
+                self.console.print()
                 file_path = self.browse_excel_file()
                 if file_path:
                     self.excel_path = file_path
-                    self.console.print(f"✅ Selected: {self.excel_path}", style="green")
+                    self.console.print(f"✅ [green]Selected: {os.path.basename(self.excel_path)}[/green]")
                 else:
-                    self.console.print("❌ No file selected", style="red")
+                    self.console.print("❌ [red]No file selected[/red]")
                     return False
             else:
-                # Manual path entry
-                path_input = Prompt.ask("📁 Enter path to Excel file")
-                # Remove surrounding quotes if user included them
+                self.console.print()
+                path_input = Prompt.ask("[yellow]📁 Enter full path to Excel file[/yellow]")
                 self.excel_path = path_input.strip('"\'')
         
-        # Normalize path
         self.excel_path = os.path.abspath(self.excel_path)
         
         if not os.path.exists(self.excel_path):
-            self.console.print(f"❌ File not found: {self.excel_path}", style="red")
-            self.excel_path = ""  # Reset path
+            error_panel = Panel(
+                f"[bold red]File not found![/bold red]\n"
+                f"[yellow]Path: {self.excel_path}[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            self.excel_path = ""
             return False
         
         try:
-            # Save a backup immediately when opening
-            backup_path = self.excel_path.replace('.xlsx', f'_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
-            import shutil
-            shutil.copy2(self.excel_path, backup_path)
-            self.console.print(f"💾 Backup created: {os.path.basename(backup_path)}", style="dim")
+            with self.console.status("[bold yellow]📖 Loading Excel file...[/bold yellow]", spinner="dots"):
+                # Create backup
+                backup_path = self.excel_path.replace('.xlsx', f'_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
+                import shutil
+                shutil.copy2(self.excel_path, backup_path)
+                
+                workbook = openpyxl.load_workbook(self.excel_path)
+                sheet = workbook.active
+                
+                # Find data range
+                last_row = 1
+                for row in range(2, sheet.max_row + 1):
+                    if sheet.cell(row=row, column=4).value:
+                        last_row = row
+                    else:
+                        break
             
-            workbook = openpyxl.load_workbook(self.excel_path)
-            sheet = workbook.active
-            
-            # Find data range
-            last_row = 1
-            for row in range(2, sheet.max_row + 1):
-                if sheet.cell(row=row, column=4).value:
-                    last_row = row
-                else:
-                    break
+            self.console.print()
             
             if last_row <= 1:
-                self.console.print("❌ No data found in Excel file", style="red")
+                error_panel = Panel(
+                    "[bold red]No data found in Excel file[/bold red]\n"
+                    "[yellow]Please make sure your Excel file has data starting from row 2[/yellow]",
+                    title="❌ Empty File",
+                    border_style="red"
+                )
+                self.console.print(error_panel)
                 workbook.close()
                 return False
             
             total_messages = last_row - 1
             
-            # Show preview
-            self.console.print(f"\n📊 Excel File Loaded: {os.path.basename(self.excel_path)}", style="bold green")
-            self.console.print(f"📋 Total messages to send: {total_messages}", style="cyan")
+            # Success header
+            success_panel = Panel(
+                f"[bold bright_green]✅ Excel file loaded successfully![/bold bright_green]\n\n"
+                f"[yellow]File:[/yellow] [cyan]{os.path.basename(self.excel_path)}[/cyan]\n"
+                f"[yellow]Total Messages:[/yellow] [bright_green]{total_messages}[/bright_green]\n"
+                f"[yellow]Backup Created:[/yellow] [dim]{os.path.basename(backup_path)}[/dim]",
+                title="📊 File Information",
+                border_style="bright_green",
+                box=box.DOUBLE
+            )
+            self.console.print(success_panel)
+            self.console.print()
             
-            # Preview first 3 messages with FULL messages
-            self.console.print("\n👥 Preview of first 3 messages:", style="bold")
-            self.console.print("=" * 80, style="dim")
+            # Preview messages
+            self.console.print("👥 [bold bright_cyan]Preview of First 3 Messages:[/bold bright_cyan]")
+            self.console.print("═" * 75, style="bright_cyan")
             
             for i in range(2, min(5, last_row + 1)):
                 student = str(sheet.cell(row=i, column=2).value or "").strip()
@@ -351,18 +492,19 @@ class SMSSender:
                 
                 normalized_phone = self.normalize_phone(phone)
                 
-                # Show FULL message without any truncation
-                self.console.print(f"\n#{i-1}", style="bold yellow")
-                self.console.print(f"🎓 Student: {student}", style="white")
-                self.console.print(f"📞 Phone: {phone} → {normalized_phone}", style="blue")
-                self.console.print(f"📝 Status: {status if status else 'PENDING'}", style="cyan")
-                self.console.print(f"💬 Message:", style="bold white")
-                self.console.print(f"{message}", style="dim")
-                
-                if i < min(5, last_row + 1) - 1:
-                    self.console.print("-" * 80, style="dim")
+                # Create colorful preview panel for each message
+                message_panel = Panel(
+                    f"[bold yellow]Student:[/bold yellow] [white]{student}[/white]\n"
+                    f"[bold yellow]Phone:[/bold yellow] [cyan]{phone}[/cyan] → [bright_green]{normalized_phone}[/bright_green]\n"
+                    f"[bold yellow]Status:[/bold yellow] [magenta]{status if status else 'PENDING'}[/magenta]\n"
+                    f"[bold yellow]Message:[/bold yellow]\n[dim]{message}[/dim]",
+                    title=f"[bold white]#{i-1}[/bold white]",
+                    border_style="bright_blue"
+                )
+                self.console.print(message_panel)
+                self.console.print()
             
-            # Show status summary in table format
+            # Status summary
             status_counts = {}
             for i in range(2, last_row + 1):
                 status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
@@ -372,21 +514,40 @@ class SMSSender:
                     status_counts['PENDING'] = status_counts.get('PENDING', 0) + 1
             
             if status_counts:
-                status_table = []
-                for status, count in status_counts.items():
-                    status_table.append([status, count])
+                # Create colored status table
+                table = Table(title="📈 Current Status Summary", box=box.DOUBLE, border_style="bright_yellow")
+                table.add_column("Status", style="bold", justify="left")
+                table.add_column("Count", style="bright_cyan", justify="right")
+                table.add_column("Percentage", style="bright_green", justify="right")
                 
-                self.console.print("\n📈 Current Status Summary:", style="bold")
-                headers = ["Status", "Count"]
-                table = tabulate(status_table, headers=headers, tablefmt="grid")
+                for status, count in sorted(status_counts.items()):
+                    percentage = (count / total_messages) * 100
+                    # Color code based on status
+                    if status in ["OK", "SENT"]:
+                        status_display = f"[bright_green]✅ {status}[/bright_green]"
+                    elif status == "PENDING":
+                        status_display = f"[yellow]⏳ {status}[/yellow]"
+                    elif status == "FAILED":
+                        status_display = f"[red]❌ {status}[/red]"
+                    else:
+                        status_display = f"[blue]{status}[/blue]"
+                    
+                    table.add_row(status_display, str(count), f"{percentage:.1f}%")
+                
                 self.console.print(table)
             
             workbook.close()
             return True
             
         except Exception as e:
-            self.console.print(f"❌ Error loading Excel file: {str(e)}", style="red")
-            self.excel_path = ""  # Reset path on error
+            error_panel = Panel(
+                f"[bold red]Error loading Excel file[/bold red]\n\n"
+                f"[yellow]{str(e)}[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            self.excel_path = ""
             return False
     
     def try_send_text_sms(self, phone_number: str, text_sms: str) -> Tuple[bool, str]:
@@ -396,15 +557,10 @@ class SMSSender:
         
         try:
             sanitized_message = self.sanitize_sms(text_sms)
-            
-            # Build command with proper formatting
             args = f'action=sendmessage savetosent=1 number={phone_number} Text="{sanitized_message}"'
             command = f'"{self.mpe_path}" {args}'
-            
-            # Use window setting
             creation_flags = 0 if self.show_window else subprocess.CREATE_NO_WINDOW
             
-            # Time the execution
             start_time = time.time()
             
             process = subprocess.run(
@@ -412,7 +568,7 @@ class SMSSender:
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=30,
                 creationflags=creation_flags
             )
             
@@ -440,34 +596,55 @@ class SMSSender:
             return False, f"Error: {str(e)}"
     
     def send_sms_messages(self):
-        """Main function to send SMS messages"""
+        """Main function to send SMS messages with enhanced confirmations"""
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_magenta")
+        self.console.print("║                    📤 SEND SMS MESSAGES                               ║", style="bold bright_magenta")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_magenta")
+        self.console.print()
+        
+        # Pre-flight checks
         if not self.excel_path:
-            self.console.print("❌ Please load an Excel file first", style="red")
+            error_panel = Panel(
+                "[bold red]No Excel file loaded![/bold red]\n\n"
+                "[yellow]Please load an Excel file first using option 1[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
             return
         
         if not self.is_sms_direct_installed():
-            self.console.print("❌ MyPhoneExplorer is not installed", style="red")
+            error_panel = Panel(
+                "[bold red]MyPhoneExplorer is not installed![/bold red]\n\n"
+                "[yellow]Please install MyPhoneExplorer to continue[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
             return
-        
-        # Show current configuration
-        self.console.print("\n⚙️  Sending Configuration:", style="bold")
-        config_table = [
-            ["Delay Range", f"{self.delay_min}-{self.delay_max} seconds"],
-            ["Show Window", "Yes" if self.show_window else "No"],
-            ["Test Mode", "Yes" if self.test_mode else "No"]
-        ]
-        config_display = tabulate(config_table, tablefmt="grid")
-        self.console.print(config_display)
         
         # Check if MyPhoneExplorer is running
         if not self.is_app_running():
-            self.console.print("⚠️ MyPhoneExplorer is not running", style="yellow")
-            if Confirm.ask("Would you like to start and connect it now?"):
+            warning_panel = Panel(
+                "[bold yellow]⚠️  MyPhoneExplorer is not running![/bold yellow]\n\n"
+                "[dim]The application needs to be connected to your phone to send messages[/dim]",
+                title="Connection Required",
+                border_style="yellow"
+            )
+            self.console.print(warning_panel)
+            self.console.print()
+            
+            if Confirm.ask("[bold cyan]Would you like to start and connect it now?[/bold cyan]", default=True):
                 if not self.connect_myphone_explorer():
-                    self.console.print("❌ Cannot proceed without MyPhoneExplorer", style="red")
+                    error_panel = Panel(
+                        "[bold red]Cannot proceed without MyPhoneExplorer connection[/bold red]",
+                        title="❌ Error",
+                        border_style="red"
+                    )
+                    self.console.print(error_panel)
                     return
             else:
-                self.console.print("❌ Cannot send SMS without MyPhoneExplorer", style="red")
+                self.console.print("\n❌ [red]Cannot send SMS without MyPhoneExplorer[/red]")
                 return
         
         try:
@@ -483,7 +660,12 @@ class SMSSender:
                     break
             
             if last_row <= 1:
-                self.console.print("❌ No data found in Excel file", style="red")
+                error_panel = Panel(
+                    "[bold red]No data found in Excel file[/bold red]",
+                    title="❌ Error",
+                    border_style="red"
+                )
+                self.console.print(error_panel)
                 workbook.close()
                 return
             
@@ -491,17 +673,83 @@ class SMSSender:
             
             # Check for already sent messages
             already_sent_count = 0
+            pending_count = 0
             for i in range(2, last_row + 1):
                 status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
-                if status == "OK" or status == "SENT":
+                if status in ["OK", "SENT"]:
                     already_sent_count += 1
+                else:
+                    pending_count += 1
+            
+            # Show summary
+            summary_panel = Panel(
+                f"[bold yellow]Total Messages:[/bold yellow] [bright_cyan]{total_rows}[/bright_cyan]\n"
+                f"[bold yellow]Already Sent:[/bold yellow] [bright_green]{already_sent_count}[/bright_green]\n"
+                f"[bold yellow]Pending:[/bold yellow] [bright_yellow]{pending_count}[/bright_yellow]",
+                title="📊 Summary",
+                border_style="bright_cyan",
+                box=box.DOUBLE
+            )
+            self.console.print(summary_panel)
+            self.console.print()
             
             resend_all = False
             if already_sent_count > 0:
-                self.console.print(f"\n📊 Found {already_sent_count} messages already marked as SENT/OK", style="yellow")
-                resend_all = Confirm.ask("Do you want to resend ALL messages (including already sent)?")
+                self.console.print(f"[bold yellow]ℹ️  Found {already_sent_count} messages already marked as SENT/OK[/bold yellow]\n")
+                resend_all = Confirm.ask(
+                    "[bold cyan]Do you want to resend ALL messages (including already sent)?[/bold cyan]",
+                    default=False
+                )
                 if not resend_all:
-                    self.console.print("✅ Will skip already sent messages", style="green")
+                    self.console.print("✅ [green]Will skip already sent messages[/green]\n")
+                else:
+                    self.console.print("⚠️  [yellow]Will resend ALL messages[/yellow]\n")
+            
+            # Delay settings confirmation
+            self.console.print("[bold cyan]📋 Current Delay Settings:[/bold cyan]")
+            self.console.print(f"   Delay between messages: [bright_yellow]{self.delay_min}-{self.delay_max} seconds[/bright_yellow]\n")
+            
+            if Confirm.ask("[bold cyan]Do you want to adjust the delay settings?[/bold cyan]", default=False):
+                self.console.print()
+                new_min = IntPrompt.ask(
+                    "   [yellow]Minimum delay (seconds)[/yellow]",
+                    default=self.delay_min
+                )
+                new_max = IntPrompt.ask(
+                    "   [yellow]Maximum delay (seconds)[/yellow]",
+                    default=self.delay_max
+                )
+                
+                if new_min <= new_max:
+                    self.delay_min = new_min
+                    self.delay_max = new_max
+                    self.console.print(f"\n✅ [green]Delay updated to {self.delay_min}-{self.delay_max} seconds[/green]\n")
+                else:
+                    self.console.print("\n⚠️  [yellow]Invalid range, keeping current settings[/yellow]\n")
+            
+            # Final confirmation with all details
+            messages_to_send = total_rows if resend_all else pending_count
+            estimated_min_time = messages_to_send * self.delay_min / 60
+            estimated_max_time = messages_to_send * self.delay_max / 60
+            
+            final_confirmation = Panel(
+                f"[bold white]Ready to Send SMS Messages[/bold white]\n\n"
+                f"[yellow]Messages to Send:[/yellow] [bright_cyan]{messages_to_send}[/bright_cyan]\n"
+                f"[yellow]Delay Range:[/yellow] [bright_green]{self.delay_min}-{self.delay_max} seconds[/bright_green]\n"
+                f"[yellow]Estimated Time:[/yellow] [bright_magenta]{estimated_min_time:.1f}-{estimated_max_time:.1f} minutes[/bright_magenta]\n"
+                f"[yellow]Window:[/yellow] [blue]{'Shown' if self.show_window else 'Hidden'}[/blue]\n\n"
+                f"[dim]You can press 'q' + Enter anytime to cancel[/dim]",
+                title="🚀 Final Confirmation",
+                border_style="bright_yellow",
+                box=box.DOUBLE
+            )
+            self.console.print(final_confirmation)
+            self.console.print()
+            
+            if not Confirm.ask("[bold bright_green]START SENDING SMS NOW?[/bold bright_green]", default=False):
+                self.console.print("\n❌ [yellow]Sending cancelled by user[/yellow]")
+                workbook.close()
+                return
             
             # Reset timing stats for this session
             self.timing_stats = {
@@ -524,8 +772,15 @@ class SMSSender:
                 'details': []
             }
             
-            self.console.print(f"\n🚀 Starting to send {total_rows} SMS messages...", style="bold green")
-            self.console.print("⏸️  Press 'q' + Enter to cancel at any time", style="yellow")
+            self.console.print()
+            start_panel = Panel(
+                "[bold bright_green]🚀 Starting SMS sending process...[/bold bright_green]\n"
+                "[yellow]⏸️  Press 'q' + Enter to cancel at any time[/yellow]",
+                border_style="bright_green",
+                box=box.DOUBLE
+            )
+            self.console.print(start_panel)
+            self.console.print()
             
             # Start cancellation listener
             self.should_cancel = False
@@ -535,14 +790,16 @@ class SMSSender:
             
             # Process with progress bar
             with Progress(
-                SpinnerColumn(),
+                SpinnerColumn(style="bright_cyan"),
                 TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
+                BarColumn(complete_style="bright_green", finished_style="bright_green"),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TextColumn("•"),
                 TimeRemainingColumn(),
+                console=self.console
             ) as progress:
                 
-                task = progress.add_task("[cyan]Sending...", total=total_rows)
+                task = progress.add_task("[bold bright_cyan]Sending SMS...", total=total_rows)
                 processed_count = 0
                 
                 for i in range(2, last_row + 1):
@@ -565,13 +822,13 @@ class SMSSender:
                     # Skip already sent messages unless resend_all is True
                     if not resend_all and current_status in ["OK", "SENT"]:
                         self.stats['skipped'] += 1
-                        progress.console.print(f"⏭️ {student_name}: Already sent - skipping", style="dim")
+                        progress.console.print(f"[dim]⏭️  {student_name}: Already sent - skipping[/dim]")
                         processed_count += 1
                         progress.update(task, advance=1)
                         continue
                     
                     if clean_phone and text_sms:
-                        progress.console.print(f"📤 Sending to {student_name}...", style="yellow")
+                        progress.console.print(f"[bold yellow]📤 Sending to {student_name}...[/bold yellow]")
                         
                         send_result, status_message = self.try_send_text_sms(clean_phone, text_sms)
                         
@@ -579,12 +836,14 @@ class SMSSender:
                             status_cell.value = "OK"
                             status_cell.fill = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
                             self.stats['success'] += 1
-                            progress.console.print(f"✅ {student_name}: {status_message}", style="green")
+                            progress.console.print(f"[bright_green]✅ {student_name}: {status_message}[/bright_green]")
                         else:
                             status_cell.value = "PENDING"
                             status_cell.fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
                             self.stats['failed'] += 1
-                            progress.console.print(f"❌ {student_name}: {status_message}", style="red")
+                            progress.console.print(f"[red]❌ {student_name}: {status_message}[/red]")
+                        
+                        detail_cell.value = status_message
                         
                         # Store details for statistics
                         self.stats['details'].append({
@@ -598,7 +857,7 @@ class SMSSender:
                         status_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
                         detail_cell.value = "Invalid phone or message"
                         self.stats['skipped'] += 1
-                        progress.console.print(f"⚠️ {student_name}: Skipped - invalid data", style="yellow")
+                        progress.console.print(f"[yellow]⚠️  {student_name}: Skipped - invalid data[/yellow]")
                     
                     processed_count += 1
                     progress.update(task, advance=1)
@@ -607,120 +866,168 @@ class SMSSender:
                 self.timing_stats['end_time'] = datetime.now()
                 
                 # Save workbook
+                self.console.print()
                 if not self.should_cancel:
-                    try:
-                        workbook.save(self.excel_path)
-                        self.console.print("💾 Excel file saved with status updates", style="green")
-                    except Exception as e:
-                        self.console.print(f"❌ Error saving Excel file: {str(e)}", style="red")
-                        # Try to save with a different name
+                    with self.console.status("[bold yellow]💾 Saving results to Excel...[/bold yellow]", spinner="dots"):
                         try:
+                            workbook.save(self.excel_path)
+                        except Exception as e:
+                            # Try to save with a different name
                             new_path = self.excel_path.replace('.xlsx', f'_updated_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx')
                             workbook.save(new_path)
-                            self.console.print(f"💾 Saved as backup: {os.path.basename(new_path)}", style="yellow")
-                        except:
-                            self.console.print("❌ Could not save changes", style="red")
-                
+                            self.console.print(f"[yellow]💾 Saved as backup: {os.path.basename(new_path)}[/yellow]")
+                    
+                    self.console.print("[bright_green]✅ Excel file saved with status updates[/bright_green]")
+                else:
+                    self.console.print("[yellow]⚠️  Changes not saved (cancelled)[/yellow]")
+            
             workbook.close()
             
             # Show final statistics
+            self.console.print()
             self.show_statistics()
             
         except Exception as e:
-            self.console.print(f"❌ Error: {str(e)}", style="red")
+            error_panel = Panel(
+                f"[bold red]An error occurred[/bold red]\n\n"
+                f"[yellow]{str(e)}[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
     
     def show_statistics(self):
-        """Display detailed statistics in tabular format"""
+        """Display detailed statistics in colorful format"""
         stats = self.stats
         timing = self.timing_stats
         
-        self.console.print("\n" + "="*60, style="bold cyan")
-        self.console.print("📊 SMS SENDING STATISTICS", style="bold cyan")
-        self.console.print("="*60, style="bold cyan")
+        self.console.print()
+        self.console.print("╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_cyan")
+        self.console.print("║                   📊 SMS SENDING STATISTICS                           ║", style="bold bright_cyan")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_cyan")
+        self.console.print()
         
-        # Main statistics table
-        main_stats = [
-            ["Total Messages", stats['total']],
-            ["✅ Successfully Sent", stats['success']],
-            ["❌ Failed", stats['failed']],
-            ["⚠️ Skipped (Invalid)", stats['skipped']],
-            ["⏭️ Already Sent", stats['already_sent']],
-        ]
+        # Main statistics table with colors
+        table = Table(title="📈 Results Summary", box=box.DOUBLE, border_style="bright_yellow")
+        table.add_column("Category", style="bold white", justify="left")
+        table.add_column("Count", style="bright_cyan", justify="right")
+        table.add_column("Percentage", style="bright_green", justify="right")
+        
+        table.add_row("[bold]Total Messages[/bold]", str(stats['total']), "-")
+        
+        if stats['success'] > 0:
+            success_pct = (stats['success'] / stats['total']) * 100
+            table.add_row("[bright_green]✅ Successfully Sent[/bright_green]", str(stats['success']), f"{success_pct:.1f}%")
+        
+        if stats['failed'] > 0:
+            failed_pct = (stats['failed'] / stats['total']) * 100
+            table.add_row("[red]❌ Failed[/red]", str(stats['failed']), f"{failed_pct:.1f}%")
+        
+        if stats['skipped'] > 0:
+            skipped_pct = (stats['skipped'] / stats['total']) * 100
+            table.add_row("[yellow]⚠️  Skipped (Invalid)[/yellow]", str(stats['skipped']), f"{skipped_pct:.1f}%")
+        
+        if stats['already_sent'] > 0:
+            already_pct = (stats['already_sent'] / stats['total']) * 100
+            table.add_row("[dim]⏭️  Already Sent[/dim]", str(stats['already_sent']), f"{already_pct:.1f}%")
         
         if stats['cancelled'] > 0:
-            main_stats.append(["🚫 Cancelled", stats['cancelled']])
+            cancelled_pct = (stats['cancelled'] / stats['total']) * 100
+            table.add_row("[bright_magenta]🚫 Cancelled[/bright_magenta]", str(stats['cancelled']), f"{cancelled_pct:.1f}%")
         
-        # Add percentages
-        percentage_stats = []
-        for row in main_stats:
-            if row[0] != "Total Messages" and not row[0].startswith("🚫"):
-                percentage = (row[1] / stats['total']) * 100
-                percentage_stats.append([row[0], row[1], f"{percentage:.1f}%"])
-            else:
-                percentage_stats.append([row[0], row[1], "-"])
-        
-        headers = ["Category", "Count", "Percentage"]
-        main_table = tabulate(percentage_stats, headers=headers, tablefmt="grid")
-        self.console.print(main_table)
+        self.console.print(table)
+        self.console.print()
         
         # Timing statistics
         if timing['count'] > 0:
             avg_time = timing['total_time'] / timing['count']
-            timing_stats = [
-                ["Total Execution Time", f"{timing['total_time']:.2f}s"],
-                ["Number of SMS Sent", timing['count']],
-                ["Fastest SMS", f"{timing['min_time']:.2f}s"],
-                ["Slowest SMS", f"{timing['max_time']:.2f}s"],
-                ["Average Time per SMS", f"{avg_time:.2f}s"]
-            ]
+            
+            timing_table = Table(title="⏱️  Timing Statistics", box=box.ROUNDED, border_style="bright_magenta")
+            timing_table.add_column("Metric", style="bold yellow", justify="left")
+            timing_table.add_column("Value", style="bright_cyan", justify="right")
+            
+            timing_table.add_row("Total Execution Time", f"{timing['total_time']:.2f}s")
+            timing_table.add_row("Number of SMS Sent", str(timing['count']))
+            timing_table.add_row("Fastest SMS", f"[bright_green]{timing['min_time']:.2f}s[/bright_green]")
+            timing_table.add_row("Slowest SMS", f"[bright_yellow]{timing['max_time']:.2f}s[/bright_yellow]")
+            timing_table.add_row("Average Time per SMS", f"[bright_cyan]{avg_time:.2f}s[/bright_cyan]")
             
             if timing['start_time'] and timing['end_time']:
                 duration = timing['end_time'] - timing['start_time']
-                timing_stats.append(["Total Session Duration", str(duration).split('.')[0]])
+                timing_table.add_row("Total Session Duration", str(duration).split('.')[0])
             
-            self.console.print("\n⏱️  Timing Statistics:", style="bold")
-            timing_table = tabulate(timing_stats, headers=["Metric", "Value"], tablefmt="grid")
             self.console.print(timing_table)
+            self.console.print()
         
         # Recent activity table
         if stats['details']:
-            recent_data = []
+            recent_count = min(8, len(stats['details']))
+            recent_table = Table(
+                title=f"📋 Recent Activity (Showing {recent_count} of {len(stats['details'])} processed)",
+                box=box.SIMPLE,
+                border_style="bright_blue"
+            )
+            recent_table.add_column("Status", justify="center")
+            recent_table.add_column("Student", style="white")
+            recent_table.add_column("Phone", style="cyan")
+            recent_table.add_column("Result", style="dim")
+            
             for detail in stats['details'][:8]:
-                status_icon = "✅" if detail['status'] == 'OK' else "❌"
-                recent_data.append([
+                status_icon = "[bright_green]✅[/bright_green]" if detail['status'] == 'OK' else "[red]❌[/red]"
+                recent_table.add_row(
                     status_icon,
                     detail['student'],
                     detail['phone'],
                     detail['message']
-                ])
+                )
             
-            self.console.print(f"\n📋 Recent Activity ({len(stats['details'])} messages processed):", style="bold")
-            recent_headers = ["Status", "Student", "Phone", "Result"]
-            recent_table = tabulate(recent_data, headers=recent_headers, tablefmt="grid")
             self.console.print(recent_table)
     
     def show_app_status(self):
-        """Show MyPhoneExplorer installation and connection status in tabular format"""
-        self.console.print("\n🔍 MyPhoneExplorer Status Check", style="bold")
-        self.console.print("─" * 40, style="dim")
+        """Show MyPhoneExplorer installation and connection status"""
+        self.console.print("\n╔═══════════════════════════════════════════════════════════════════════╗", style="bold bright_blue")
+        self.console.print("║                    🔍 SYSTEM STATUS CHECK                             ║", style="bold bright_blue")
+        self.console.print("╚═══════════════════════════════════════════════════════════════════════╝", style="bold bright_blue")
+        self.console.print()
         
-        status_data = []
+        # Create status table
+        table = Table(box=box.DOUBLE, border_style="bright_cyan")
+        table.add_column("Component", style="bold yellow", justify="left")
+        table.add_column("Status", justify="left")
+        table.add_column("Details", style="dim", justify="left")
         
         # Installation status
         installed = self.is_sms_direct_installed()
-        status_data.append(["MyPhoneExplorer Installed", "✅ Yes" if installed else "❌ No"])
-        
         if installed:
-            status_data.append(["Installation Path", self.mpe_path])
+            table.add_row(
+                "MyPhoneExplorer",
+                "[bright_green]✅ Installed[/bright_green]",
+                self.mpe_path
+            )
+        else:
+            table.add_row(
+                "MyPhoneExplorer",
+                "[red]❌ Not Installed[/red]",
+                "Please install MyPhoneExplorer"
+            )
         
         # Running status
         running = self.is_app_running()
-        status_data.append(["MyPhoneExplorer Running", "✅ Yes" if running else "❌ No"])
+        if running:
+            table.add_row(
+                "Connection",
+                "[bright_green]✅ Running[/bright_green]",
+                "MyPhoneExplorer is active"
+            )
+        else:
+            table.add_row(
+                "Connection",
+                "[yellow]⚠️  Not Running[/yellow]",
+                "Start MyPhoneExplorer (option 3)"
+            )
         
         # Excel status
         excel_loaded = self.excel_path and os.path.exists(self.excel_path)
-        status_data.append(["Excel File Loaded", "✅ Yes" if excel_loaded else "❌ No"])
-        
         if excel_loaded:
             try:
                 workbook = openpyxl.load_workbook(self.excel_path)
@@ -731,12 +1038,54 @@ class SMSSender:
                         last_row = row
                 total_messages = last_row - 1
                 workbook.close()
-                status_data.append(["Messages Ready", total_messages])
+                table.add_row(
+                    "Excel File",
+                    "[bright_green]✅ Loaded[/bright_green]",
+                    f"{total_messages} messages ready"
+                )
             except:
-                status_data.append(["Excel Status", "⚠️ File has issues"])
+                table.add_row(
+                    "Excel File",
+                    "[yellow]⚠️  File Issues[/yellow]",
+                    "Cannot read file properly"
+                )
+        else:
+            table.add_row(
+                "Excel File",
+                "[red]❌ Not Loaded[/red]",
+                "Load file (option 1)"
+            )
         
-        status_table = tabulate(status_data, headers=["Component", "Status"], tablefmt="grid")
-        self.console.print(status_table)
+        self.console.print(table)
+        self.console.print()
+        
+        # Overall readiness
+        if installed and running and excel_loaded:
+            ready_panel = Panel(
+                "[bold bright_green]✅ System is ready to send SMS![/bold bright_green]\n"
+                "[dim]You can proceed to option 4 to start sending messages[/dim]",
+                title="System Ready",
+                border_style="bright_green",
+                box=box.DOUBLE
+            )
+            self.console.print(ready_panel)
+        else:
+            issues = []
+            if not installed:
+                issues.append("Install MyPhoneExplorer")
+            if not running:
+                issues.append("Start MyPhoneExplorer (option 3)")
+            if not excel_loaded:
+                issues.append("Load Excel file (option 1)")
+            
+            warning_panel = Panel(
+                "[bold yellow]⚠️  System not ready[/bold yellow]\n\n"
+                "[white]Please complete these steps:[/white]\n" +
+                "\n".join([f"  • {issue}" for issue in issues]),
+                title="Action Required",
+                border_style="yellow"
+            )
+            self.console.print(warning_panel)
     
     def _listen_for_cancel(self):
         """Listen for cancellation input"""
@@ -745,7 +1094,7 @@ class SMSSender:
                 user_input = input().strip().lower()
                 if user_input == 'q':
                     self.should_cancel = True
-                    self.console.print("\n🛑 Cancellation requested...", style="yellow")
+                    self.console.print("\n[bold yellow]🛑 Cancellation requested... stopping after current message[/bold yellow]")
                     break
             except:
                 break
@@ -775,25 +1124,60 @@ class SMSSender:
                     if self.stats['total'] > 0:
                         self.show_statistics()
                     else:
-                        self.console.print("📊 No statistics available yet", style="yellow")
+                        info_panel = Panel(
+                            "[yellow]No statistics available yet[/yellow]\n"
+                            "[dim]Statistics will appear after you send messages[/dim]",
+                            title="📊 Statistics",
+                            border_style="yellow"
+                        )
+                        self.console.print(info_panel)
                 elif choice == '0':
-                    self.console.print("\n👋 Thank you for using SMS Sending System!", style="green")
+                    goodbye_panel = Panel(
+                        "[bold bright_green]Thank you for using BlueZA App![/bold bright_green]\n"
+                        "[dim]SMS Sending System by BlueZA[/dim]",
+                        title="👋 Goodbye",
+                        border_style="bright_green",
+                        box=box.DOUBLE
+                    )
+                    self.console.print("\n")
+                    self.console.print(goodbye_panel)
                     sys.exit(0)
                 else:
-                    self.console.print("❌ Invalid choice. Please try again.", style="red")
-                    continue
-                
+                    error_panel = Panel(
+                        f"[bold red]'{choice}' is not a valid option[/bold red]\n"
+                        "[yellow]Please enter a number between 0-7[/yellow]",
+                        title="❌ Invalid Choice",
+                        border_style="red"
+                    )
+                    self.console.print("\n")
+                    self.console.print(error_panel)
+                    
                 # Wait for user to continue
                 if choice != '0':
-                    self.console.print("\n↵ Press Enter to continue...", style="dim", end="")
+                    self.console.print("\n" + "─" * 75, style="dim bright_blue")
+                    self.console.print("[bold bright_cyan]Press Enter to return to main menu...[/bold bright_cyan]", end="")
                     input()
                     
             except KeyboardInterrupt:
-                self.console.print("\n\n👋 Application interrupted. Goodbye!", style="yellow")
+                self.console.print("\n\n")
+                interrupt_panel = Panel(
+                    "[bold yellow]Application interrupted by user[/bold yellow]\n"
+                    "[dim]Goodbye![/dim]",
+                    title="👋 Exit",
+                    border_style="yellow"
+                )
+                self.console.print(interrupt_panel)
                 sys.exit(0)
             except Exception as e:
-                self.console.print(f"\n❌ Error: {str(e)}", style="red")
-                self.console.print("↵ Press Enter to continue...", style="dim", end="")
+                error_panel = Panel(
+                    f"[bold red]An unexpected error occurred[/bold red]\n\n"
+                    f"[yellow]{str(e)}[/yellow]",
+                    title="❌ Error",
+                    border_style="red"
+                )
+                self.console.print("\n")
+                self.console.print(error_panel)
+                self.console.print("\n[dim]Press Enter to continue...[/dim]", end="")
                 input()
 
 def parse_arguments():
