@@ -198,6 +198,7 @@ class DualExamProcessor:
         print(f"\n{self.GREEN}3. COMBINING EXAMS AND CALCULATING AVERAGES")
         print("=" * 60)
 
+        print(f"{self.YELLOW}Merging exam datasets...")
         # Merge on student_id with suffixes
         df_merged = pd.merge(
             self.df_1,
@@ -209,9 +210,11 @@ class DualExamProcessor:
 
         # Add student information
         df_merged = df_merged.merge(self.students_df, on='student_id', how='left')
+        print(f"{self.GREEN}✓ Successfully merged {len(df_merged):,} student records")
 
-        # Calculate averages for each subject
-        for col in self.valid_subject_cols:
+        print(f"\n{self.CYAN}Calculating subject averages...")
+        # Calculate averages for each subject with progress bar
+        for col in tqdm(self.valid_subject_cols, desc="Processing Subjects", ncols=80):
             col_1 = f"{col}_1"
             col_2 = f"{col}_2"
             
@@ -219,14 +222,22 @@ class DualExamProcessor:
             df_merged[col] = df_merged[[col_1, col_2]].mean(axis=1)
 
         self.df_combined = df_merged
+        print(f"{self.GREEN}✓ Calculated averages for {len(self.valid_subject_cols)} subjects")
 
-        print(f"{self.CYAN}COMBINED DATA SAMPLE (First 5 students, First 3 subjects):")
+        # Show detailed comparison for first 4 subjects
+        print(f"\n{self.MAGENTA}EXAM COMPARISON - DETAILED VIEW (First 10 Students)")
+        print(f"{self.WHITE}Showing: Exam 1 → Exam 2 → Average for first 4 subjects")
+        print("=" * 120)
+        
         sample_data = []
-        for i in range(min(5, len(self.df_combined))):
+        for i in range(min(10, len(self.df_combined))):
             row = self.df_combined.iloc[i]
-            sample_row = {'No': i+1, 'Student': row['full_name']}
+            sample_row = {
+                'No': i+1, 
+                'Student': row['full_name'][:20]  # Truncate long names
+            }
             
-            for j, col in enumerate(self.valid_subject_cols[:3]):
+            for j, col in enumerate(self.valid_subject_cols[:4]):
                 short = self.subject_column_map[col]["subject_short"]
                 mark_1 = row.get(f"{col}_1", np.nan)
                 mark_2 = row.get(f"{col}_2", np.nan)
@@ -240,6 +251,34 @@ class DualExamProcessor:
 
         sample_df = pd.DataFrame(sample_data)
         print(tabulate(sample_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+        
+        # Show statistics
+        print(f"\n{self.CYAN}MERGE STATISTICS:")
+        stats_data = []
+        for col in self.valid_subject_cols[:6]:  # First 6 subjects
+            short = self.subject_column_map[col]["subject_short"]
+            name = self.subject_column_map[col]["subject_name"]
+            
+            exam1_count = self.df_combined[f"{col}_1"].notna().sum()
+            exam2_count = self.df_combined[f"{col}_2"].notna().sum()
+            avg_count = self.df_combined[col].notna().sum()
+            
+            exam1_avg = self.df_combined[f"{col}_1"].mean()
+            exam2_avg = self.df_combined[f"{col}_2"].mean()
+            combined_avg = self.df_combined[col].mean()
+            
+            stats_data.append({
+                'Subject': f"{short} ({name[:15]})",
+                'Exam1_N': exam1_count,
+                'Exam1_Avg': f"{exam1_avg:.1f}" if pd.notna(exam1_avg) else "—",
+                'Exam2_N': exam2_count,
+                'Exam2_Avg': f"{exam2_avg:.1f}" if pd.notna(exam2_avg) else "—",
+                'Combined_N': avg_count,
+                'Combined_Avg': f"{combined_avg:.1f}" if pd.notna(combined_avg) else "—"
+            })
+        
+        stats_df = pd.DataFrame(stats_data)
+        print(tabulate(stats_df, headers='keys', tablefmt='fancy_grid', showindex=False))
 
     def calculate_grades(self):
         """Calculate grades for averages."""
