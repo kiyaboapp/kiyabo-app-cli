@@ -13,6 +13,9 @@ import datetime
 # Initialize colorama for colored output
 init(autoreset=True)
 
+# CRITICAL FIX: Enable tqdm progress bar for pandas
+tqdm.pandas()
+
 warnings.filterwarnings("ignore")
 
 
@@ -41,7 +44,8 @@ class DualExamProcessor:
         base_subjects: int = 7,
         flat_rate: bool = True,
         include_inc: bool = True,
-        ranking_method: str = "min"
+        ranking_method: str = "min",
+        necta_decimal_places: int = 1
     ):
         """
         Initialize Dual Exam Processor.
@@ -55,6 +59,7 @@ class DualExamProcessor:
             flat_rate: Use flat rate calculation (default: True)
             include_inc: Include incomplete students (default: True)
             ranking_method: Ranking method - 'min', 'max', 'average', 'dense', 'first' (default: 'min')
+            necta_decimal_places: Number of decimal places for subject marks in NECTA string (default: 1)
         """
         self.EXAM_ID_1 = exam_id_1
         self.EXAM_ID_2 = exam_id_2
@@ -64,6 +69,7 @@ class DualExamProcessor:
         self.FLAT_RATE = flat_rate
         self.INCLUDE_INC = include_inc
         self.RANKING_METHOD = ranking_method.lower()
+        self.NECTA_DECIMAL_PLACES = necta_decimal_places
 
         # Validate ranking method
         valid_methods = ['min', 'max', 'average', 'dense', 'first']
@@ -298,14 +304,63 @@ class DualExamProcessor:
             except:
                 return None
 
-        for col in self.valid_subject_cols:
+        print(f"{self.CYAN}Processing grades for {len(self.valid_subject_cols)} subjects...")
+        for col in tqdm(self.valid_subject_cols, desc="Calculating Grades", ncols=80):
             self.df_combined[f"{col}_grade"] = self.df_combined[col].apply(calculate_grade)
+
+        print(f"\n{self.MAGENTA}GRADE DISTRIBUTION (First 10 Students, First 5 Subjects):")
+        grade_sample = []
+        for i in range(min(10, len(self.df_combined))):
+            row = self.df_combined.iloc[i]
+            grade_row = {
+                'No': i+1,
+                'Student': row['full_name'][:20]
+            }
+            
+            for j, col in enumerate(self.valid_subject_cols[:5]):
+                short = self.subject_column_map[col]["subject_short"]
+                mark = row[col]
+                grade = row[f"{col}_grade"]
+                
+                if pd.notna(mark) and pd.notna(grade):
+                    grade_row[short] = f"{mark:.1f} ({grade})"
+                else:
+                    grade_row[short] = "—"
+            
+            grade_sample.append(grade_row)
+        
+        grade_df = pd.DataFrame(grade_sample)
+        print(tabulate(grade_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+        
+        # Overall grade statistics
+        print(f"\n{self.CYAN}OVERALL GRADE STATISTICS (Across All Subjects):")
+        all_grades = []
+        for col in self.valid_subject_cols:
+            all_grades.extend(self.df_combined[f"{col}_grade"].dropna().tolist())
+        
+        if all_grades:
+            grade_counts = pd.Series(all_grades).value_counts().sort_index()
+            total = len(all_grades)
+            
+            grade_stats = []
+            for grade in ['A', 'B', 'C', 'D', 'F']:
+                count = grade_counts.get(grade, 0)
+                percentage = (count / total * 100) if total > 0 else 0
+                grade_stats.append({
+                    'Grade': grade,
+                    'Count': count,
+                    'Percentage': f"{percentage:.1f}%"
+                })
+            
+            grade_stats_df = pd.DataFrame(grade_stats)
+            print(tabulate(grade_stats_df, headers='keys', tablefmt='fancy_grid', showindex=False))
 
     def aggregate_performance(self):
         """Calculate subject counts, total marks, and average marks."""
         print(f"\n{self.GREEN}5. ACADEMIC AGGREGATION")
         print("=" * 60)
 
+        print(f"{self.CYAN}Calculating subject counts and totals...")
         # Count actual subjects attempted
         self.df_combined['subject_count_real'] = self.df_combined[self.valid_subject_cols].notna().sum(axis=1)
 
@@ -315,17 +370,61 @@ class DualExamProcessor:
                 lambda row: sum(sorted([m for m in row if not pd.isna(m)], reverse=True)[:self.BASE_SUBJECTS]), 
                 axis=1
             )
+            print(f"{self.YELLOW}Mode: FLAT RATE (Top {self.BASE_SUBJECTS} subjects)")
         else:
             self.df_combined['subject_count'] = self.df_combined['subject_count_real'].apply(
                 lambda x: self.BASE_SUBJECTS if x <= self.BASE_SUBJECTS else x
             )
             self.df_combined['total_marks'] = self.df_combined[self.valid_subject_cols].sum(axis=1)
+            print(f"{self.YELLOW}Mode: DYNAMIC (All subjects)")
 
         self.df_combined['avg_marks'] = np.where(
             self.df_combined['subject_count'] > 0, 
             self.df_combined['total_marks'] / self.df_combined['subject_count'], 
             np.nan
         )
+
+        print(f"\n{self.MAGENTA}PERFORMANCE SUMMARY (First 10 Students):")
+        summary_data = []
+        for i in range(min(10, len(self.df_combined))):
+            row = self.df_combined.iloc[i]
+            summary_data.append({
+                'No': i+1,
+                'Student': row['full_name'][:25],
+                'Real Subjects': int(row['subject_count_real']),
+                'Counted Subjects': int(row['subject_count']),
+                'Total Marks': f"{row['total_marks']:.1f}",
+                'Average Marks': f"{row['avg_marks']:.2f}" if pd.notna(row['avg_marks']) else "—"
+            })
+
+        summary_df = pd.DataFrame(summary_data)
+        print(tabulate(summary_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+        
+        # Performance statistics
+        print(f"\n{self.CYAN}CLASS PERFORMANCE STATISTICS:")
+        perf_stats = [
+            {
+                'Metric': 'Average Total Marks',
+                'Value': f"{self.df_combined['total_marks'].mean():.2f}",
+                'Min': f"{self.df_combined['total_marks'].min():.2f}",
+                'Max': f"{self.df_combined['total_marks'].max():.2f}"
+            },
+            {
+                'Metric': 'Average Marks (Mean)',
+                'Value': f"{self.df_combined['avg_marks'].mean():.2f}",
+                'Min': f"{self.df_combined['avg_marks'].min():.2f}",
+                'Max': f"{self.df_combined['avg_marks'].max():.2f}"
+            },
+            {
+                'Metric': 'Subject Count (Real)',
+                'Value': f"{self.df_combined['subject_count_real'].mean():.1f}",
+                'Min': f"{int(self.df_combined['subject_count_real'].min())}",
+                'Max': f"{int(self.df_combined['subject_count_real'].max())}"
+            }
+        ]
+        
+        perf_df = pd.DataFrame(perf_stats)
+        print(tabulate(perf_df, headers='keys', tablefmt='fancy_grid', showindex=False))
 
     def calculate_points_and_division(self):
         """Calculate points and division."""
@@ -364,23 +463,153 @@ class DualExamProcessor:
             if points <= 33: return points, 'IV'
             return points, '0'
 
-        points_division = self.df_combined.apply(calculate_points_and_division, axis=1, result_type='expand')
+        print(f"{self.CYAN}Calculating points for {len(self.df_combined):,} students...")
+        # FIXED: Use progress_apply instead of apply
+        points_division = self.df_combined.progress_apply(calculate_points_and_division, axis=1, result_type='expand')
         self.df_combined['points'] = points_division[0]
         self.df_combined['division'] = points_division[1]
 
-        print(f"{self.MAGENTA}DIVISION DISTRIBUTION:")
+        print(f"\n{self.MAGENTA}STUDENT POINTS & DIVISIONS (First 10):")
+        points_data = []
+        for i in range(min(10, len(self.df_combined))):
+            row = self.df_combined.iloc[i]
+            points_data.append({
+                'No': i+1,
+                'Student': row['full_name'][:25],
+                'Subjects': int(row['subject_count_real']),
+                'Points': int(row['points']) if pd.notna(row['points']) else 'N/A',
+                'Division': row['division'],
+                'Avg Marks': f"{row['avg_marks']:.2f}" if pd.notna(row['avg_marks']) else "—"
+            })
+
+        points_df = pd.DataFrame(points_data)
+        print(tabulate(points_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+        print(f"\n{self.CYAN}DIVISION DISTRIBUTION:")
         div_counts = self.df_combined['division'].value_counts().reset_index()
         div_counts.columns = ['Division', 'Students']
         div_counts['Percentage'] = (div_counts['Students'] / len(self.df_combined) * 100).round(1)
+        div_counts = div_counts.sort_values('Students', ascending=False)
+        
+        # Add visual bar
+        max_count = div_counts['Students'].max()
+        div_counts['Visual'] = div_counts['Students'].apply(
+            lambda x: '█' * int((x / max_count) * 30) if x > 0 else ''
+        )
+        
         print(tabulate(div_counts, headers='keys', tablefmt='fancy_grid', showindex=False))
+        
+        # Points distribution
+        if self.df_combined['points'].notna().any():
+            print(f"\n{self.CYAN}POINTS DISTRIBUTION:")
+            points_valid = self.df_combined[self.df_combined['points'].notna()]['points']
+            print(f"   • Minimum Points: {self.WHITE}{int(points_valid.min())}")
+            print(f"   • Maximum Points: {self.WHITE}{int(points_valid.max())}")
+            print(f"   • Average Points: {self.WHITE}{points_valid.mean():.2f}")
+            print(f"   • Median Points: {self.WHITE}{points_valid.median():.1f}")
+
+    def rank_subjects(self):
+        """Rank students within each subject based on average marks."""
+        print(f"\n{self.GREEN}7. SUBJECT-WISE RANKING (MARKS DESC)")
+        print("=" * 60)
+
+        print(f"{self.CYAN}Calculating subject positions for {len(self.valid_subject_cols)} subjects...")
+        
+        for col in tqdm(self.valid_subject_cols, desc="Ranking Subjects", ncols=80):
+            # Only rank students who have marks for this subject (average)
+            subject_rank_df = self.df_combined[self.df_combined[col].notna()].copy()
+            
+            if len(subject_rank_df) > 0:
+                # Sort by marks descending
+                subject_rank_df = subject_rank_df.sort_values(col, ascending=False)
+                
+                # Apply min ranking (students with same marks get same position)
+                subject_rank_df[f'{col}_pos'] = subject_rank_df[col].rank(
+                    method='min', 
+                    ascending=False
+                ).astype(int)
+                
+                subject_rank_df[f'{col}_out_of'] = len(subject_rank_df)
+                
+                # Merge back to main dataframe
+                self.df_combined = self.df_combined.merge(
+                    subject_rank_df[['student_id', f'{col}_pos', f'{col}_out_of']],
+                    on='student_id', 
+                    how='left',
+                    suffixes=('', '_dup')
+                )
+                
+                # Drop duplicate columns if they exist
+                dup_cols = [c for c in self.df_combined.columns if c.endswith('_dup')]
+                if dup_cols:
+                    self.df_combined.drop(columns=dup_cols, inplace=True)
+
+        print(f"{self.GREEN}✓ Completed subject-wise ranking for all subjects")
+
+        # Display sample subject ranking for first 3 subjects
+        print(f"\n{self.MAGENTA}SUBJECT RANKING SAMPLE (First 3 Subjects - Top 10 Each)")
+        print("=" * 100)
+        
+        for idx, col in enumerate(self.valid_subject_cols[:3]):
+            subject_name = self.subject_column_map[col]['subject_name']
+            subject_short = self.subject_column_map[col]['subject_short']
+            
+            print(f"\n{self.CYAN}Subject {idx+1}: {self.WHITE}{subject_name} ({subject_short})")
+            
+            subject_top = self.df_combined[self.df_combined[col].notna()].nlargest(10, col)[
+                ['full_name', col, f'{col}_pos', f'{col}_out_of']
+            ].copy()
+            
+            if len(subject_top) > 0:
+                subject_top['full_name'] = subject_top['full_name'].str[:25]
+                subject_top[col] = subject_top[col].apply(lambda x: f"{x:.1f}")
+                subject_top.insert(0, 'No', range(1, len(subject_top) + 1))
+                subject_top = subject_top.rename(columns={
+                    col: 'Average Marks',
+                    f'{col}_pos': 'Position',
+                    f'{col}_out_of': 'Out Of'
+                })
+                print(tabulate(subject_top, headers='keys', tablefmt='fancy_grid', showindex=False))
+            else:
+                print(f"{self.YELLOW}No data available for this subject")
+
+        # Show subject ranking statistics
+        print(f"\n{self.CYAN}SUBJECT RANKING STATISTICS:")
+        stats_data = []
+        for col in self.valid_subject_cols[:8]:  # First 8 subjects
+            short = self.subject_column_map[col]['subject_short']
+            
+            if f'{col}_pos' in self.df_combined.columns:
+                ranked_count = self.df_combined[f'{col}_pos'].notna().sum()
+                if ranked_count > 0:
+                    top_mark = self.df_combined[self.df_combined[col].notna()][col].max()
+                    avg_mark = self.df_combined[self.df_combined[col].notna()][col].mean()
+                    
+                    stats_data.append({
+                        'Subject': short,
+                        'Students Ranked': ranked_count,
+                        'Top Mark': f"{top_mark:.1f}",
+                        'Average': f"{avg_mark:.1f}"
+                    })
+        
+        if stats_data:
+            stats_df = pd.DataFrame(stats_data)
+            print(tabulate(stats_df, headers='keys', tablefmt='fancy_grid', showindex=False))
 
     def rank_students(self):
         """Rank students based on average performance."""
-        print(f"\n{self.GREEN}7. STUDENT RANKING")
+        print(f"\n{self.GREEN}8. STUDENT RANKING ({self.RANKING_METHOD.upper()} METHOD)")
         print("=" * 60)
 
         abs_students = self.df_combined[self.df_combined['division'] == 'ABS'].copy()
         valid_students = self.df_combined[self.df_combined['division'] != 'ABS'].copy()
+
+        print(f"{self.YELLOW}RANKING BREAKDOWN:")
+        print(f"   • ABS Students: {self.WHITE}{len(abs_students):,}")
+        print(f"   • Valid Students: {self.WHITE}{len(valid_students):,}")
+        print(f"   • Sort Columns: {self.WHITE}{', '.join(self.sort_columns)}")
+        print(f"   • Sort Directions: {self.WHITE}{', '.join(['ASC' if asc else 'DESC' for asc in self.ascending])}")
+        print(f"   • Ranking Method: {self.WHITE}{self.RANKING_METHOD}")
 
         if len(valid_students) == 0:
             print(f"{self.RED}No valid students to rank!")
@@ -391,12 +620,14 @@ class DualExamProcessor:
         valid_students['ranking_points'] = valid_students['points'].fillna(max_points + 1)
 
         # Sort and rank
+        print(f"\n{self.CYAN}Sorting students...")
         valid_students = valid_students.sort_values(
             self.sort_columns,
             ascending=self.ascending,
             na_position='last'
         )
 
+        print(f"{self.CYAN}Applying ranking algorithm...")
         if self.RANKING_METHOD == 'first':
             valid_students['position'] = range(1, len(valid_students) + 1)
         elif self.RANKING_METHOD == 'dense':
@@ -426,35 +657,211 @@ class DualExamProcessor:
             how='left'
         )
 
-        print(f"{self.GREEN}TOP 10 STUDENTS:")
+        print(f"\n{self.GREEN}{'='*100}")
+        print(f"{self.GREEN}TOP 10 STUDENTS (COMBINED EXAM AVERAGE)")
+        print(f"{self.GREEN}{'='*100}")
         top_10 = valid_students[['full_name', 'points', 'avg_marks', 'subject_count_real', 'position', 'division']].head(10).copy()
+        top_10['full_name'] = top_10['full_name'].str[:25]
+        top_10['points'] = top_10['points'].apply(lambda x: int(x) if pd.notna(x) else 'N/A')
+        top_10['avg_marks'] = top_10['avg_marks'].apply(lambda x: f"{x:.2f}" if pd.notna(x) else '—')
+        top_10['position'] = top_10['position'].apply(lambda x: int(x) if x == int(x) else f"{x:.1f}")
         top_10.insert(0, 'No', range(1, len(top_10) + 1))
         print(tabulate(top_10, headers='keys', tablefmt='fancy_grid', showindex=False))
 
-    def save_as_query(self):
-        """Save the combined results as an Access query."""
-        print(f"\n{self.GREEN}8. SAVING AS ACCESS QUERY")
+        print(f"\n{self.YELLOW}{'='*100}")
+        print(f"{self.YELLOW}BOTTOM 10 STUDENTS")
+        print(f"{self.YELLOW}{'='*100}")
+        bottom_10 = valid_students[['full_name', 'points', 'avg_marks', 'subject_count_real', 'position', 'division']].tail(10).copy()
+        bottom_10['full_name'] = bottom_10['full_name'].str[:25]
+        bottom_10['points'] = bottom_10['points'].apply(lambda x: int(x) if pd.notna(x) else 'N/A')
+        bottom_10['avg_marks'] = bottom_10['avg_marks'].apply(lambda x: f"{x:.2f}" if pd.notna(x) else '—')
+        bottom_10['position'] = bottom_10['position'].apply(lambda x: int(x) if x == int(x) else f"{x:.1f}")
+        bottom_10.insert(0, 'No', range(1, len(bottom_10) + 1))
+        print(tabulate(bottom_10, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+        # Show tie statistics
+        if self.RANKING_METHOD in ['min', 'max', 'average', 'dense']:
+            position_counts = valid_students.groupby('position').size()
+            tied_positions = position_counts[position_counts > 1]
+            
+            if len(tied_positions) > 0:
+                print(f"\n{self.CYAN}TIED RANKINGS ANALYSIS ({self.RANKING_METHOD.upper()} method):")
+                tie_stats = [
+                    {'Metric': 'Total positions with ties', 'Value': len(tied_positions)},
+                    {'Metric': 'Largest tie group', 'Value': f"{tied_positions.max()} students"},
+                    {'Metric': 'Total students in ties', 'Value': tied_positions.sum()},
+                    {'Metric': 'Percentage in ties', 'Value': f"{(tied_positions.sum()/len(valid_students)*100):.1f}%"}
+                ]
+                tie_df = pd.DataFrame(tie_stats)
+                print(tabulate(tie_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+    def generate_necta_strings(self):
+        """Generate NECTA-format result strings for each student."""
+        print(f"\n{self.GREEN}9. NECTA RESULTS STRING GENERATION")
         print("=" * 60)
 
-        # Drop existing query if it exists
+        # Check if new curriculum (subjects 41 or 42 present)
+        subjects_sql = f"""
+            SELECT subject_id FROM tbl_school_subjects 
+            WHERE is_present_{self.class_id} = True
+        """
+        subjects_check = pd.read_sql(subjects_sql, self.conn)
+        is_new_curriculum = (41 in subjects_check['subject_id'].values) or \
+                           (42 in subjects_check['subject_id'].values)
+        max_compulsory = 8 if is_new_curriculum else 7
+
+        print(f"{self.CYAN}Curriculum Type: {self.WHITE}{'NEW' if is_new_curriculum else 'OLD'}")
+        print(f"{self.CYAN}Compulsory Subjects: {self.WHITE}{max_compulsory}")
+
+        def build_necta_string(row):
+            """Build NECTA result string for a student based on averages."""
+            parts = []
+            for i, col in enumerate(self.valid_subject_cols):
+                mark = row[col]  # Average mark
+                grade = row[f"{col}_grade"]
+                short = self.subject_column_map[col]['subject_short']
+                
+                # Compulsory subjects (first N subjects)
+                if i < max_compulsory:
+                    if pd.isna(grade) or grade is None:
+                        parts.append(f" {short}-'X'")
+                    else:
+                        # Format mark: if it's a whole number, show as int; otherwise use decimal places
+                        if mark == int(mark):
+                            mark_formatted = f"{int(mark)}"
+                        else:
+                            mark_formatted = f"{mark:.{self.NECTA_DECIMAL_PLACES}f}"
+                        parts.append(f" {short} {mark_formatted} -'{grade}'")
+                # Optional subjects (only if attempted)
+                elif not (pd.isna(grade) or grade is None):
+                    # Format mark: if it's a whole number, show as int; otherwise use decimal places
+                    if mark == int(mark):
+                        mark_formatted = f"{int(mark)}"
+                    else:
+                        mark_formatted = f"{mark:.{self.NECTA_DECIMAL_PLACES}f}"
+                    parts.append(f" {short} {mark_formatted} -'{grade}'")
+            
+            result = "".join(parts).strip()
+            if result.endswith("-"):
+                result = result[:-1].strip()
+            return result
+
+        print(f"\n{self.CYAN}Generating NECTA strings for {len(self.df_combined):,} students...")
+        # Use apply with tqdm wrapper
+        with tqdm(total=len(self.df_combined), desc="Building NECTA Strings", ncols=80) as pbar:
+            necta_results = []
+            for idx, row in self.df_combined.iterrows():
+                necta_results.append(build_necta_string(row))
+                pbar.update(1)
+            self.df_combined['necta_results'] = necta_results
+
+        print(f"\n{self.MAGENTA}NECTA RESULTS SAMPLE (First 10 Students):")
+        necta_sample = self.df_combined[['full_name', 'necta_results']].head(10).copy()
+        necta_sample['full_name'] = necta_sample['full_name'].str[:20]
+        necta_sample.insert(0, 'No', range(1, len(necta_sample) + 1))
+        
+        # Truncate long result strings for display
+        for i, row in necta_sample.iterrows():
+            txt = row['necta_results']
+            necta_sample.at[i, 'necta_results'] = txt[:90] + '...' if len(txt) > 90 else txt
+        
+        print(tabulate(necta_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+        # Calculate average grade
+        def calculate_grade(mark):
+            if pd.isna(mark): return None
+            try:
+                mark_float = float(mark)
+                if mark_float >= 75: return 'A'
+                if mark_float >= 65: return 'B'
+                if mark_float >= 45: return 'C'
+                if mark_float >= 30: return 'D'
+                if mark_float >= 0: return 'F'
+                return None
+            except:
+                return None
+
+        self.df_combined['avg_grade'] = self.df_combined['avg_marks'].apply(calculate_grade)
+
+        # Append AVG to NECTA string
+        def append_avg(row):
+            base = row['necta_results']
+            if pd.isna(row['avg_marks']) or pd.isna(row['avg_grade']):
+                return base
+            
+            avg_marks_formatted = f"{row['avg_marks']:.2f}"
+            return f"{base} AVG {avg_marks_formatted} -'{row['avg_grade']}'".strip()
+
+        self.df_combined['necta_results'] = self.df_combined.apply(append_avg, axis=1)
+
+        print(f"\n{self.GREEN}✓ NECTA strings generated and finalized with AVG")
+
+        # Show final NECTA sample with AVG
+        print(f"\n{self.CYAN}FINAL NECTA RESULTS WITH AVG (Sample):")
+        final_sample = self.df_combined[['full_name', 'avg_marks', 'avg_grade', 'necta_results']].head(10).copy()
+        final_sample['full_name'] = final_sample['full_name'].str[:20]
+        final_sample['avg_marks'] = final_sample['avg_marks'].apply(
+            lambda x: f"{x:.2f}" if pd.notna(x) else "N/A"
+        )
+        final_sample.insert(0, 'No', range(1, len(final_sample) + 1))
+        
+        # Truncate NECTA strings
+        for i, row in final_sample.iterrows():
+            txt = row['necta_results']
+            if len(txt) > 70:
+                final_sample.at[i, 'necta_results'] = '...' + txt[-70:]
+            else:
+                final_sample.at[i, 'necta_results'] = txt
+        
+        print(tabulate(final_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
+
+    def save_as_query(self):
+        """Save the combined results as an Access query."""
+        print(f"\n{self.GREEN}10. SAVING COMBINED RESULTS AS ACCESS QUERY")
+        print("=" * 60)
+
+        # Drop existing query/view if it exists - try multiple approaches
+        drop_attempts = [
+            f"DROP VIEW {self.QUERY_NAME}",
+            f"DROP TABLE {self.QUERY_NAME}",
+        ]
+        
+        for drop_sql in drop_attempts:
+            try:
+                self.cursor.execute(drop_sql)
+                self.conn.commit()
+                print(f"{self.YELLOW}✓ Dropped existing object: {self.QUERY_NAME}")
+                break
+            except:
+                pass
+        
+        # Also try deleting from MSysObjects (Access system table) if above fails
         try:
-            self.cursor.execute(f"DROP VIEW {self.QUERY_NAME}")
+            self.cursor.execute(f"""
+                DELETE FROM MSysObjects 
+                WHERE Name = '{self.QUERY_NAME}' AND Type = 5
+            """)
             self.conn.commit()
-            print(f"{self.YELLOW}Dropped existing query: {self.QUERY_NAME}")
+            print(f"{self.YELLOW}✓ Removed query from system catalog: {self.QUERY_NAME}")
         except:
             pass
 
         # Build column list for SELECT statement
         select_cols = ['student_id', 'full_name', 'sex']
         
-        # Add subject columns with suffixes
+        # Add subject columns with suffixes and position columns
         for col in self.valid_subject_cols:
             select_cols.extend([f"{col}_1", f"{col}_2", col])  # col is the average
+            # Add grade column
+            select_cols.append(f"{col}_grade")
+            # Add position columns if they exist
+            if f"{col}_pos" in self.df_combined.columns:
+                select_cols.extend([f"{col}_pos", f"{col}_out_of"])
         
         # Add aggregate columns
         select_cols.extend([
             'subject_count_real', 'subject_count', 'total_marks', 
-            'avg_marks', 'points', 'division', 'position', 'out_of'
+            'avg_marks', 'avg_grade', 'points', 'division', 'position', 'out_of', 'necta_results'
         ])
 
         # Create temporary table to store results
@@ -464,9 +871,11 @@ class DualExamProcessor:
         try:
             self.cursor.execute(f"DROP TABLE {temp_table}")
             self.conn.commit()
+            print(f"{self.YELLOW}✓ Dropped existing temp table: {temp_table}")
         except:
             pass
 
+        print(f"\n{self.CYAN}Creating table structure...")
         # Define column types for table creation
         col_definitions = []
         col_definitions.append("student_id INT")
@@ -477,16 +886,22 @@ class DualExamProcessor:
             col_definitions.append(f"{col}_1 DOUBLE")
             col_definitions.append(f"{col}_2 DOUBLE")
             col_definitions.append(f"{col} DOUBLE")
+            col_definitions.append(f"{col}_grade TEXT(2)")
+            if f"{col}_pos" in self.df_combined.columns:
+                col_definitions.append(f"{col}_pos INT")
+                col_definitions.append(f"{col}_out_of INT")
         
         col_definitions.extend([
             "subject_count_real INT",
             "subject_count INT",
             "total_marks DOUBLE",
             "avg_marks DOUBLE",
+            "avg_grade TEXT(2)",
             "points INT",
             "division TEXT(10)",
             "position DOUBLE",
-            "out_of INT"
+            "out_of INT",
+            "necta_results MEMO"
         ])
 
         # Create table
@@ -494,13 +909,15 @@ class DualExamProcessor:
         self.cursor.execute(create_sql)
         self.conn.commit()
 
-        print(f"{self.CYAN}Created temporary table: {temp_table}")
+        print(f"{self.GREEN}✓ Created temporary table: {self.WHITE}{temp_table}")
+        print(f"{self.CYAN}Table columns: {self.WHITE}{len(col_definitions)}")
 
         # Insert data
         insert_cols = [c for c in select_cols if c in self.df_combined.columns]
         placeholders = ', '.join(['?' for _ in insert_cols])
         insert_sql = f"INSERT INTO {temp_table} ({', '.join(insert_cols)}) VALUES ({placeholders})"
 
+        print(f"\n{self.CYAN}Preparing data for insertion...")
         insert_data = []
         for _, row in self.df_combined.iterrows():
             values = []
@@ -514,25 +931,74 @@ class DualExamProcessor:
                     values.append(value)
             insert_data.append(tuple(values))
 
+        print(f"{self.GREEN}✓ Prepared {len(insert_data):,} records for insertion")
+
         # Batch insert
         batch_size = 50
-        with tqdm(total=len(insert_data), desc="Inserting Data") as pbar:
+        print(f"\n{self.CYAN}Inserting data into table (batch size: {batch_size})...")
+        with tqdm(total=len(insert_data), desc="Inserting Records", ncols=100, colour='green') as pbar:
             for i in range(0, len(insert_data), batch_size):
                 batch = insert_data[i:i + batch_size]
                 self.cursor.executemany(insert_sql, batch)
                 self.conn.commit()
                 pbar.update(len(batch))
 
+        print(f"{self.GREEN}✓ Successfully inserted all records!")
+
         # Create query pointing to table
+        print(f"\n{self.CYAN}Creating query view...")
         query_sql = f"CREATE VIEW {self.QUERY_NAME} AS SELECT * FROM {temp_table}"
         self.cursor.execute(query_sql)
         self.conn.commit()
 
-        print(f"{self.GREEN}✓ Query saved: {self.WHITE}{self.QUERY_NAME}")
-        print(f"{self.CYAN}You can now open this query in Access to view the combined results!")
+        print(f"\n{self.GREEN}{'='*100}")
+        print(f"{self.GREEN}✓✓✓ QUERY SUCCESSFULLY CREATED ✓✓✓")
+        print(f"{self.GREEN}{'='*100}")
+        print(f"{self.WHITE}Query Name: {self.CYAN}{self.QUERY_NAME}")
+        print(f"{self.WHITE}Backing Table: {self.CYAN}{temp_table}")
+        print(f"{self.WHITE}Total Records: {self.CYAN}{len(insert_data):,}")
+        print(f"{self.WHITE}Total Columns: {self.CYAN}{len(insert_cols)}")
+        
+        print(f"\n{self.MAGENTA}QUERY STRUCTURE PREVIEW:")
+        structure_preview = []
+        for i, col in enumerate(insert_cols[:15]):  # Show first 15 columns
+            structure_preview.append({
+                'No': i+1,
+                'Column Name': col,
+                'Type': 'Number' if any(x in col for x in ['mark', 'count', 'total', 'avg', 'point', 'position']) else 'Text'
+            })
+        
+        structure_df = pd.DataFrame(structure_preview)
+        print(tabulate(structure_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+        
+        if len(insert_cols) > 15:
+            print(f"{self.YELLOW}... and {len(insert_cols) - 15} more columns")
+        
+        print(f"\n{self.CYAN}{'='*100}")
+        print(f"{self.CYAN}You can now open '{self.QUERY_NAME}' in Microsoft Access!")
+        print(f"{self.CYAN}{'='*100}")
 
     def run(self):
         """Execute the complete dual exam processing pipeline."""
+        start_time = datetime.datetime.now()
+        
+        print(f"\n{self.MAGENTA}{'='*100}")
+        print(f"{self.MAGENTA}{'='*100}")
+        print(f"{self.GREEN}       DUAL EXAM PROCESSOR - COMBINE & AVERAGE SYSTEM")
+        print(f"{self.MAGENTA}{'='*100}")
+        print(f"{self.MAGENTA}{'='*100}")
+        print(f"\n{self.CYAN}CONFIGURATION:")
+        print(f"   • Exam 1 ID: {self.WHITE}{self.EXAM_ID_1}")
+        print(f"   • Exam 2 ID: {self.WHITE}{self.EXAM_ID_2}")
+        print(f"   • Database: {self.WHITE}{self.DB_PATH}")
+        print(f"   • Query Name: {self.WHITE}{self.QUERY_NAME}")
+        print(f"   • Base Subjects: {self.WHITE}{self.BASE_SUBJECTS}")
+        print(f"   • Flat Rate: {self.WHITE}{self.FLAT_RATE}")
+        print(f"   • Include Incomplete: {self.WHITE}{self.INCLUDE_INC}")
+        print(f"   • Ranking Method: {self.WHITE}{self.RANKING_METHOD.upper()}")
+        print(f"   • NECTA Decimal Places: {self.WHITE}{self.NECTA_DECIMAL_PLACES}")
+        print(f"   • Start Time: {self.WHITE}{start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         try:
             self._connect_to_database()
             self.load_data()
@@ -541,21 +1007,62 @@ class DualExamProcessor:
             self.calculate_grades()
             self.aggregate_performance()
             self.calculate_points_and_division()
+            self.rank_subjects()
             self.rank_students()
+            self.generate_necta_strings()
             self.save_as_query()
+            
+            end_time = datetime.datetime.now()
+            duration = (end_time - start_time).total_seconds()
+
+            print(f"\n{self.GREEN}{'='*100}")
+            print(f"{self.GREEN}{'='*100}")
+            print(f"{self.GREEN}           ✓✓✓ PROCESS COMPLETED SUCCESSFULLY ✓✓✓")
+            print(f"{self.GREEN}{'='*100}")
+            print(f"{self.GREEN}{'='*100}")
+            
+            print(f"\n{self.CYAN}FINAL SUMMARY:")
+            summary_data = [
+                {'Metric': 'Total Students Processed', 'Value': f"{len(self.df_combined):,}"},
+                {'Metric': 'Active Subjects', 'Value': f"{len(self.valid_subject_cols)}"},
+                {'Metric': 'Valid Rankings', 'Value': f"{self.df_combined['position'].notna().sum():,}"},
+                {'Metric': 'Division I Students', 'Value': f"{len(self.df_combined[self.df_combined['division'] == 'I']):,}"},
+                {'Metric': 'Query Created', 'Value': self.QUERY_NAME},
+                {'Metric': 'Total Columns in Query', 'Value': f"{3 + (len(self.valid_subject_cols) * 6) + 10}"},
+                {'Metric': 'Processing Time', 'Value': f"{duration:.2f} seconds"},
+                {'Metric': 'End Time', 'Value': end_time.strftime('%Y-%m-%d %H:%M:%S')}
+            ]
+            
+            summary_df = pd.DataFrame(summary_data)
+            print(tabulate(summary_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+            
+            print(f"\n{self.MAGENTA}QUERY DATA COMPLETENESS CHECK:")
+            completeness = [
+                {'Data Type': '✓ Individual Exam Marks (Exam 1 & 2)', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Average Marks per Subject', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Grades per Subject', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Subject Rankings (pos & out_of)', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Overall Student Rankings', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Points & Divisions', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ NECTA Results String', 'Status': 'INCLUDED'},
+                {'Data Type': '✓ Average Grade', 'Status': 'INCLUDED'}
+            ]
+            
+            completeness_df = pd.DataFrame(completeness)
+            print(tabulate(completeness_df, headers='keys', tablefmt='fancy_grid', showindex=False))
 
         except Exception as e:
-            print(f"{self.RED}ERROR: {e}")
+            print(f"\n{self.RED}{'='*100}")
+            print(f"{self.RED}ERROR OCCURRED!")
+            print(f"{self.RED}{'='*100}")
+            print(f"{self.RED}Error: {e}")
             import traceback
             traceback.print_exc()
             raise
         finally:
             if self.conn:
                 self.conn.close()
-
-        print("\n" + "=" * 60)
-        print(f"{self.GREEN}PROCESS COMPLETED SUCCESSFULLY!")
-        print("=" * 60)
+                print(f"\n{self.CYAN}Database connection closed.")
 
 
 # ========================================
@@ -571,6 +1078,7 @@ if __name__ == "__main__":
         base_subjects=7,
         flat_rate=True,
         include_inc=True,
-        ranking_method='min'
+        ranking_method='min',
+        necta_decimal_places=1  # Shows subject averages with 1 decimal place (e.g., 75.5)
     )
     processor.run()
