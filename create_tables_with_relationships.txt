@@ -1,0 +1,65 @@
+CREATE TABLE STATEMENTS WITH RELATIONSHIPS
+============================================================
+
+-- Table 1:
+CREATE TABLE [tbl_academic_years] (
+    [academic_year] VARCHAR(10),
+    [is_active] VARCHAR(1)
+);
+
+-- Table 2:
+CREATE TABLE [tbl_fee_apply] (
+    [apply_to] VARCHAR(100)
+);
+
+-- Table 3:
+CREATE TABLE [tbl_fee_collection] (
+    [collection_id] VARCHAR(10),
+    [pupil_id] VARCHAR(255),
+    [structure_id] VARCHAR(10),
+    [amount] VARCHAR(19),
+    [date_filled] VARCHAR(19),
+    [date_paid] VARCHAR(19),
+    [notes] VARCHAR(255)
+);
+
+-- Table 4:
+CREATE TABLE [tbl_fee_structure] (
+    [structure_id] VARCHAR(10),
+    [fee_type_id] VARCHAR(10),
+    [class_id] VARCHAR(20),
+    [academic_year] VARCHAR(10),
+    [amount] VARCHAR(19),
+    [notes] VARCHAR(255)
+);
+
+-- Table 5:
+CREATE TABLE [tbl_fee_type] (
+    [fee_type_id] VARCHAR(10),
+    [fee_type] VARCHAR(100),
+    [apply_to] VARCHAR(100),
+    [is_adhoc] VARCHAR(1),
+    [note] VARCHAR(255)
+);
+
+-- Table 6:
+CREATE TABLE [tbl_scholarhip_type] (
+    [scholarship_type_id] VARCHAR(10),
+    [scholarship_type] VARCHAR(255)
+);
+
+-- Table 7:
+CREATE TABLE [tbl_scholarships] (
+    [scholarship_id] VARCHAR(10),
+    [pupil_id] VARCHAR(255),
+    [structure_id] VARCHAR(10),
+    [scholarship_type_id] VARCHAR(10),
+    [academic_year] VARCHAR(10),
+    [amount] VARCHAR(19),
+    [percentage] VARCHAR(53)
+);
+
+
+============================================================
+RELATIONSHIPS SUMMARY
+============================================================

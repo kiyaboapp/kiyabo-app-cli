@@ -1,0 +1,804 @@
+COMPLETE FIELD ATTRIBUTES
+================================================================================
+
+
+TABLE: tbl_academic_years
+============================================================
+
+FIELD: academic_year
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: is_active
+----------------------------------------
+  data_type: BIT
+  type_code: -7
+  column_size: 1
+  buffer_length: 1
+  decimal_digits: 0
+  num_prec_radix: None
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: -7
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_fee_apply
+============================================================
+
+FIELD: apply_to
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 100
+  buffer_length: 200
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 200
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_fee_collection
+============================================================
+
+FIELD: collection_id
+----------------------------------------
+  data_type: COUNTER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: pupil_id
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: structure_id
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: amount
+----------------------------------------
+  data_type: CURRENCY
+  type_code: 2
+  column_size: 19
+  buffer_length: 21
+  decimal_digits: 4
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 2
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: date_filled
+----------------------------------------
+  data_type: DATETIME
+  type_code: 93
+  column_size: 19
+  buffer_length: 16
+  decimal_digits: 0
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 9
+  sql_datetime_sub: 3
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: date_paid
+----------------------------------------
+  data_type: DATETIME
+  type_code: 93
+  column_size: 19
+  buffer_length: 16
+  decimal_digits: 0
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 9
+  sql_datetime_sub: 3
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: notes
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_fee_structure
+============================================================
+
+FIELD: structure_id
+----------------------------------------
+  data_type: COUNTER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: fee_type_id
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: class_id
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 20
+  buffer_length: 40
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 40
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: academic_year
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: amount
+----------------------------------------
+  data_type: CURRENCY
+  type_code: 2
+  column_size: 19
+  buffer_length: 21
+  decimal_digits: 4
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 2
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: notes
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_fee_type
+============================================================
+
+FIELD: fee_type_id
+----------------------------------------
+  data_type: COUNTER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: fee_type
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 100
+  buffer_length: 200
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 200
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: apply_to
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 100
+  buffer_length: 200
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 200
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: is_adhoc
+----------------------------------------
+  data_type: BIT
+  type_code: -7
+  column_size: 1
+  buffer_length: 1
+  decimal_digits: 0
+  num_prec_radix: None
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: -7
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: note
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_scholarhip_type
+============================================================
+
+FIELD: scholarship_type_id
+----------------------------------------
+  data_type: COUNTER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: scholarship_type
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+TABLE: tbl_scholarships
+============================================================
+
+FIELD: scholarship_id
+----------------------------------------
+  data_type: COUNTER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 0
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: NO
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: pupil_id
+----------------------------------------
+  data_type: VARCHAR
+  type_code: -9
+  column_size: 255
+  buffer_length: 510
+  decimal_digits: None
+  num_prec_radix: None
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: -9
+  sql_datetime_sub: None
+  char_octet_length: 510
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: structure_id
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: scholarship_type_id
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: academic_year
+----------------------------------------
+  data_type: INTEGER
+  type_code: 4
+  column_size: 10
+  buffer_length: 4
+  decimal_digits: 0
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 4
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: amount
+----------------------------------------
+  data_type: CURRENCY
+  type_code: 2
+  column_size: 19
+  buffer_length: 21
+  decimal_digits: 4
+  num_prec_radix: 10
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 2
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+
+
+FIELD: percentage
+----------------------------------------
+  data_type: DOUBLE
+  type_code: 8
+  column_size: 53
+  buffer_length: 8
+  decimal_digits: None
+  num_prec_radix: 2
+  nullable: 1
+  remarks: None
+  column_def: None
+  sql_data_type: 8
+  sql_datetime_sub: None
+  char_octet_length: None
+  ordinal_position: 1
+  is_nullable: YES
+  is_primary_key: False
+  is_foreign_key: False
+  is_unique: False
+  is_auto_increment: False
+  references_table: 
+  references_field: 
+  default_value: 
+  validation_rule: 
+

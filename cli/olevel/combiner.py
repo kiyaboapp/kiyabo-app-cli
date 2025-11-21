@@ -1079,6 +1079,6 @@ if __name__ == "__main__":
         flat_rate=True,
         include_inc=True,
         ranking_method='min',
-        necta_decimal_places=1  # Shows subject averages with 1 decimal place (e.g., 75.5)
+        necta_decimal_places=1
     )
     processor.run()

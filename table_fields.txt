@@ -1,0 +1,264 @@
+TABLE FIELDS AND ATTRIBUTES
+==================================================
+
+
+TABLE: tbl_academic_years
+----------------------------------------
+  Field: academic_year
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: is_active
+    Data Type: <class 'bool'>
+    Display Size: None
+    Max Size: 1
+    Precision: 1
+    Scale: 0
+    Nullable: False
+
+
+TABLE: tbl_fee_apply
+----------------------------------------
+  Field: apply_to
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 100
+    Precision: 100
+    Scale: 0
+    Nullable: True
+
+
+TABLE: tbl_fee_collection
+----------------------------------------
+  Field: collection_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: False
+
+  Field: pupil_id
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+  Field: structure_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: amount
+    Data Type: <class 'decimal.Decimal'>
+    Display Size: None
+    Max Size: 19
+    Precision: 19
+    Scale: 4
+    Nullable: True
+
+  Field: date_filled
+    Data Type: <class 'datetime.datetime'>
+    Display Size: None
+    Max Size: 19
+    Precision: 19
+    Scale: 0
+    Nullable: True
+
+  Field: date_paid
+    Data Type: <class 'datetime.datetime'>
+    Display Size: None
+    Max Size: 19
+    Precision: 19
+    Scale: 0
+    Nullable: True
+
+  Field: notes
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+
+TABLE: tbl_fee_structure
+----------------------------------------
+  Field: structure_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: False
+
+  Field: fee_type_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: class_id
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 20
+    Precision: 20
+    Scale: 0
+    Nullable: True
+
+  Field: academic_year
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: amount
+    Data Type: <class 'decimal.Decimal'>
+    Display Size: None
+    Max Size: 19
+    Precision: 19
+    Scale: 4
+    Nullable: True
+
+  Field: notes
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+
+TABLE: tbl_fee_type
+----------------------------------------
+  Field: fee_type_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: False
+
+  Field: fee_type
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 100
+    Precision: 100
+    Scale: 0
+    Nullable: True
+
+  Field: apply_to
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 100
+    Precision: 100
+    Scale: 0
+    Nullable: True
+
+  Field: is_adhoc
+    Data Type: <class 'bool'>
+    Display Size: None
+    Max Size: 1
+    Precision: 1
+    Scale: 0
+    Nullable: False
+
+  Field: note
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+
+TABLE: tbl_scholarhip_type
+----------------------------------------
+  Field: scholarship_type_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: False
+
+  Field: scholarship_type
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+
+TABLE: tbl_scholarships
+----------------------------------------
+  Field: scholarship_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: False
+
+  Field: pupil_id
+    Data Type: <class 'str'>
+    Display Size: None
+    Max Size: 255
+    Precision: 255
+    Scale: 0
+    Nullable: True
+
+  Field: structure_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: scholarship_type_id
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: academic_year
+    Data Type: <class 'int'>
+    Display Size: None
+    Max Size: 10
+    Precision: 10
+    Scale: 0
+    Nullable: True
+
+  Field: amount
+    Data Type: <class 'decimal.Decimal'>
+    Display Size: None
+    Max Size: 19
+    Precision: 19
+    Scale: 4
+    Nullable: True
+
+  Field: percentage
+    Data Type: <class 'float'>
+    Display Size: None
+    Max Size: 53
+    Precision: 53
+    Scale: 0
+    Nullable: True
+
