@@ -64,7 +64,7 @@ class DualExamProcessor:
         self.EXAM_ID_1 = exam_id_1
         self.EXAM_ID_2 = exam_id_2
         self.DB_PATH = db_path
-        self.QUERY_NAME =f("{exam_id_1}_{exam_id_2}")               #query_name
+        self.QUERY_NAME =f"{exam_id_1}_{exam_id_2}"             #query_name
         self.BASE_SUBJECTS = base_subjects
         self.FLAT_RATE = flat_rate
         self.INCLUDE_INC = include_inc
