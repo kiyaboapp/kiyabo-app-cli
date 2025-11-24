@@ -338,7 +338,7 @@ class DualExamProcessor:
         self.df_combined = df_merged
         print(f"{self.GREEN}Calculated averages for {len(self.valid_subject_cols)} subjects")
 
-        # Show detailed comparison for first 4 subjects
+        # Show detailed comparison for first 2 subjects
         print(f"\n{self.MAGENTA}EXAM COMPARISON - DETAILED VIEW (First 10 Students)")
         print(f"{self.WHITE}Showing: Exam 1 to Exam 2 to Average for first 4 subjects")
         print("=" * 120)
@@ -351,7 +351,7 @@ class DualExamProcessor:
                 'Student': row['full_name'][:20]  # Truncate long names
             }
             
-            for j, col in enumerate(self.valid_subject_cols[:4]):
+            for j, col in enumerate(self.valid_subject_cols[:2]):
                 short = self.subject_column_map[col]["subject_short"]
                 mark_1 = row.get(f"{col}_1", np.nan)
                 mark_2 = row.get(f"{col}_2", np.nan)
@@ -871,7 +871,7 @@ class DualExamProcessor:
         # Truncate long result strings for display
         for i, row in necta_sample.iterrows():
             txt = row['necta_results']
-            necta_sample.at[i, 'necta_results'] = txt[:120] + '...' if len(txt) > 120 else txt
+            necta_sample.at[i, 'necta_results'] = txt[:90] + '...' if len(txt) > 90 else txt
         
         print(tabulate(necta_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
 
@@ -916,8 +916,8 @@ class DualExamProcessor:
         # Truncate NECTA strings
         for i, row in final_sample.iterrows():
             txt = row['necta_results']
-            if len(txt) > 100:
-                final_sample.at[i, 'necta_results'] = '...' + txt[-99:]
+            if len(txt) > 70:
+                final_sample.at[i, 'necta_results'] = '...' + txt[-70:]
             else:
                 final_sample.at[i, 'necta_results'] = txt
         
@@ -965,7 +965,7 @@ class DualExamProcessor:
             data.append(tuple(row_data))
 
         print(f"{self.CYAN}Inserting {len(data):,} records into {self.RESULTS_TABLE}...")
-        batch = 100
+        batch = 10
         for i in tqdm(range(0, len(data), batch), desc="Saving Permanently"):
             self.cursor.executemany(insert_sql, data[i:i+batch])
             self.conn.commit()
