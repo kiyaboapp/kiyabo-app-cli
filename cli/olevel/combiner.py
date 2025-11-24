@@ -871,7 +871,7 @@ class DualExamProcessor:
         # Truncate long result strings for display
         for i, row in necta_sample.iterrows():
             txt = row['necta_results']
-            necta_sample.at[i, 'necta_results'] = txt[:90] + '...' if len(txt) > 90 else txt
+            necta_sample.at[i, 'necta_results'] = txt[:120] + '...' if len(txt) > 120 else txt
         
         print(tabulate(necta_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
 
@@ -916,8 +916,8 @@ class DualExamProcessor:
         # Truncate NECTA strings
         for i, row in final_sample.iterrows():
             txt = row['necta_results']
-            if len(txt) > 70:
-                final_sample.at[i, 'necta_results'] = '...' + txt[-70:]
+            if len(txt) > 100:
+                final_sample.at[i, 'necta_results'] = '...' + txt[-99:]
             else:
                 final_sample.at[i, 'necta_results'] = txt
         
@@ -992,6 +992,184 @@ class DualExamProcessor:
         print(f"{self.GREEN}METADATA LOGGED in {self.METADATA_TABLE}")
         print(f"{self.GREEN}{'='*100}")
 
+
+    def update_dual_competency_analysis(self):
+        """Calculate competency analysis from averaged grades and save to tbl_dual_competency with BEAUTIFUL output."""
+        print(f"\n{self.GREEN}10. DUAL COMPETENCY ANALYSIS (COMBINED EXAM)")
+        print("=" * 70)
+
+        # ------------------------------------------------------------------
+        # 1. Create table if not exists
+        # ------------------------------------------------------------------
+        create_sql = """
+        CREATE TABLE tbl_dual_competency (
+            combo_id TEXT(100),
+            exam_id_1 TEXT(50),
+            exam_id_2 TEXT(50),
+            subject_id LONG,
+            A_s LONG, B_s LONG, C_s LONG, D_s LONG, F_s LONG,
+            gpa DOUBLE,
+            competency_level TEXT(50),
+            processed_date DATETIME,
+            PRIMARY KEY (combo_id, subject_id)
+        )
+        """
+        try:
+            self.cursor.execute(create_sql)
+            self.conn.commit()
+        except:
+            pass  # already exists
+
+        combo_id = f"{self.EXAM_ID_1}_{self.EXAM_ID_2}"
+        self.cursor.execute("DELETE FROM tbl_dual_competency WHERE combo_id = ?", (combo_id,))
+
+        # ------------------------------------------------------------------
+        # 2. GPA & Level Logic (same as original)
+        # ------------------------------------------------------------------
+        def calculate_gpa(A, B, C, D, F):
+            total = A + B + C + D + F
+            return round((A*1 + B*2 + C*3 + D*4 + F*5) / total, 4) if total > 0 else None
+
+        def get_competency_level(gpa):
+            if gpa is None: return "No Data"
+            if gpa >= 4.6: return "Grade F (Fail)"
+            if gpa >= 3.6: return "Grade D (Satisfactory)"
+            if gpa >= 2.6: return "Grade C (Good)"
+            if gpa >= 1.6: return "Grade B (Very Good)"
+            if gpa >= 1.0: return "Grade A (Excellent)"
+            return "No Data"
+
+        # ------------------------------------------------------------------
+        # 3. Load subjects
+        # ------------------------------------------------------------------
+        subjects_df = pd.read_sql(f"""
+            SELECT subject_id, subject_name 
+            FROM tbl_school_subjects 
+            WHERE is_present_{self.class_id} = True
+            ORDER BY subject_id
+        """, self.conn)
+
+        competency_data = []
+        processed_count = 0
+
+        for _, subject in subjects_df.iterrows():
+            subject_id = int(subject['subject_id'])
+            subject_name = subject['subject_name']
+
+            col_name = next(
+                (col for col, info in self.subject_column_map.items() if info['subject_id'] == subject_id),
+                None
+            )
+
+            if not col_name:
+                continue
+
+            grade_col = f"{col_name}_grade"
+
+            if grade_col not in self.df_combined.columns:
+                A = B = C = D = F = 0
+                gpa = None
+                level = "No Data"
+            else:
+                valid = self.df_combined[grade_col].dropna()
+                if valid.empty:
+                    A = B = C = D = F = 0
+                    gpa = None
+                    level = "No Data"
+                else:
+                    counts = valid.value_counts()
+                    A = int(counts.get('A', 0))
+                    B = int(counts.get('B', 0))
+                    C = int(counts.get('C', 0))
+                    D = int(counts.get('D', 0))
+                    F = int(counts.get('F', 0))
+
+                    gpa = calculate_gpa(A, B, C, D, F)
+                    level = get_competency_level(gpa)
+
+                    if A + B + C + D + F > 0:
+                        print(f"{self.GREEN}✓ {subject_name:<25} → A:{A:>3} B:{B:>3} C:{C:>3} D:{D:>3} F:{F:>3} | GPA: {gpa:>6} → {level}")
+                        processed_count += 1
+
+            # Save to DB
+            self.cursor.execute("""
+                INSERT INTO tbl_dual_competency 
+                (combo_id, exam_id_1, exam_id_2, subject_id, A_s, B_s, C_s, D_s, F_s, gpa, competency_level, processed_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (combo_id, self.EXAM_ID_1, self.EXAM_ID_2, subject_id, A, B, C, D, F, gpa, level, datetime.datetime.now()))
+
+            competency_data.append({
+                'No': len(competency_data) + 1,
+                'Subject': subject_name,
+                'A': A, 'B': B, 'C': C, 'D': D, 'F': F,
+                'Total': A + B + C + D + F,
+                'GPA': gpa if gpa is not None else "N/A",
+                'Level': level
+            })
+
+        self.conn.commit()
+
+        # ------------------------------------------------------------------
+        # 4. FINAL BEAUTIFUL DISPLAY (exactly like your original style)
+        # ------------------------------------------------------------------
+        if competency_data:
+            print(f"\n{self.MAGENTA}{'='*80}")
+            print(f"{self.MAGENTA}       SUBJECT COMPETENCY ANALYSIS — COMBINED EXAM")
+            print(f"{self.MAGENTA}       Exam 1: {self.final_exam_name_1}")
+            print(f"{self.MAGENTA}       Exam 2: {self.final_exam_name_2}")
+            print(f"{self.MAGENTA}{'='*80}")
+
+            df_display = pd.DataFrame(competency_data)
+
+            # Color-code GPA and Level
+            def color_gpa(val):
+                if val == "N/A": return val
+                v = float(val)
+                if v >= 4.6: return f"{self.RED}{val}{self.RESET}"
+                if v >= 3.6: return f"{self.YELLOW}{val}{self.RESET}"
+                if v >= 2.6: return f"{self.CYAN}{val}{self.RESET}"
+                if v >= 1.6: return f"{self.GREEN}{val}{self.RESET}"
+                return f"{self.GREEN}{Style.BRIGHT}{val}{self.RESET}"
+
+            def color_level(txt):
+                if "Excellent" in txt: return f"{self.GREEN}{Style.BRIGHT}{txt}{self.RESET}"
+                if "Very Good" in txt: return f"{self.GREEN}{txt}{self.RESET}"
+                if "Good" in txt: return f"{self.CYAN}{txt}{self.RESET}"
+                if "Satisfactory" in txt: return f"{self.YELLOW}{txt}{self.RESET}"
+                if "Fail" in txt: return f"{self.RED}{Style.BRIGHT}{txt}{self.RESET}"
+                return f"{self.WHITE}{txt}{self.RESET}"
+
+            # Apply formatting (for console only)
+            df_display['GPA'] = df_display['GPA'].apply(color_gpa)
+            df_display['Level'] = df_display['Level'].apply(color_level)
+
+            print(tabulate(
+                df_display[['No', 'Subject', 'A', 'B', 'C', 'D', 'F', 'Total', 'GPA', 'Level']],
+                headers=['No', 'Subject', 'A', 'B', 'C', 'D', 'F', 'Total', 'GPA', 'Competency Level'],
+                tablefmt='fancy_grid',
+                showindex=False,
+                stralign='center',
+                numalign='center'
+            ))
+
+            valid_subjects = len([x for x in competency_data if x['GPA'] != "N/A"])
+            total_subjects = len(competency_data)
+
+            print(f"\n{self.CYAN}Summary:")
+            print(f"   • Subjects with valid data  : {self.WHITE}{valid_subjects}/{total_subjects}")
+            print(f"   • Saved to table            : {self.WHITE}tbl_dual_competency")
+            print(f"   • Combo ID                  : {self.WHITE}{combo_id}")
+            print(f"   • Processed at              : {self.WHITE}{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+            print(f"\n{self.GREEN}{Style.BRIGHT}DUAL COMPETENCY ANALYSIS COMPLETED SUCCESSFULLY!")
+            print(f"{self.GREEN}{'='*80}{self.RESET}")
+
+        else:
+            print(f"{self.RED}No competency data was generated!")
+
+
+
+
     def run(self):
         """Execute the complete dual exam processing pipeline."""
         start_time = datetime.datetime.now()
@@ -1023,7 +1201,8 @@ class DualExamProcessor:
             self.rank_subjects()
             self.rank_students()
             self.generate_necta_strings()
-            self.save_results_permanently()   # ← Replaces save_as_query
+            self.save_results_permanently()
+            self.update_dual_competency_analysis()
 
             end_time = datetime.datetime.now()
             duration = (end_time - start_time).total_seconds()
