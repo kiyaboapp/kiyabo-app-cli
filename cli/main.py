@@ -8,21 +8,26 @@ from .banner import print_banner
 from .colors import console
 
 # IMPORT ONLY WHAT EXISTS IN YOUR ORIGINAL FILES
-from .alevel.ranking import process_exam as alevel_process_exam
-from .olevel.processDS import OlevelProcessor
-from .primary.process import ExamProcessor as PrimaryProcessor
-from .olevel.resultImport import OlevelResultImporter
-from .primary.resultImport import PrimaryResultImporter
-from .olevel.insert import OlevelStudentImporter
 
+from .olevel.processDS import OlevelProcessor
+from .olevel.resultImport import OlevelResultImporter
+from .olevel.insert import OlevelStudentImporter
+from .olevel.combiner import DualExamProcessor
+
+from .alevel.ranking import process_exam as alevel_process_exam
 from .alevel.insert import AlevelStudentImporter
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
 
 from .primary.insert import PrimaryPupilImporter
+from .primary.resultImport import PrimaryResultImporter
+from .primary.process import ExamProcessor as PrimaryProcessor
+
 
 from . import testing
 from .time_travel import TimeTravelProcessor
+
+from .bulk import BulkSMSSender
 
 app = typer.Typer(
     name="kiyabo",
@@ -242,8 +247,68 @@ def future_from_antique(
         space_ship.into_the_future()
     except Exception as e:
         console.print(f"[red]ERROR:[/] {e}")
-    
 
+
+@app.command("sendsms")
+def bulk_sms(
+    level: str = typer.Argument(..., help="School level"),
+    excel_path: str = typer.Option(..., "--excel", "-e", help="Path to Excel file with SMS data"),
+    mpe_exe_path: str = typer.Option(r"C:\Program Files (x86)\MyPhoneExplorer\MyPhoneExplorer.exe", "--mpe", "-m", help="Path to MyPhoneExplorer.exe"),
+    mode: str = typer.Option("direct", "--mode", "-M", help="Sending mode: 'direct' for one-by-one, 'batch' for XML batches"),
+    batch_size: int = typer.Option(1, "--batch-size", "-b", help="Batch size for 'batch' mode"),
+    min_sleep: int = typer.Option(10, "--min-sleep","-min", help="Minimum sleep time between messages (seconds)"),
+    max_sleep: int = typer.Option(20, "--max-sleep", "-max", help="Maximum sleep time between messages (seconds)"),
+):
+    """Send bulk SMS using MyPhoneExplorer"""
+    print_banner()
+    sender = BulkSMSSender(
+        excel_path=excel_path,
+        mpe_exe_path=mpe_exe_path,
+        mode=mode,
+        batch_size=batch_size,
+        min_sleep=min_sleep,
+        max_sleep=max_sleep
+    )
+    sender.run()
+
+
+
+@app.command("combine")
+def combine(
+    level: str = typer.Argument(..., help="School level (e.g. Form4, O-Level, A-Level)"),
+
+    e1: str = typer.Option(..., "--exam1", "-e1", help="First exam ID"),
+    e2: str = typer.Option(..., "--exam2", "-e2", help="Second exam ID"),
+    db: str = typer.Option(..., "--db", "-d", help="Path to Access database (.accdb)"),
+
+    query_name: str = typer.Option("qry_CombinedExamResults", "--query-name", "-q", help="Name of the query to create"),
+    base_subjects: int = typer.Option(7, "--base-subjects", "-b", help="Number of base/best subjects"),
+    flat_rate: bool = typer.Option(True, "--flat-rate/--no-flat-rate", help="Use flat division rate instead of weighted"),
+    include_inc: bool = typer.Option(True, "--include-inc/--no-include-inc", help="Include INC subjects in average calculation"),
+    ranking_method: str = typer.Option("min", "--ranking", "-r", help="Ranking method: 'min', 'max' or 'total'"),
+    necta_decimal_places: int = typer.Option(1, "--necta-dp", help="Decimal places for NECTA-style division (0 or 1)"),
+):
+    """
+    Combine two exams and save results as Access query.
+    """
+    print_banner()
+    level=level.lower()
+
+    if level=="olevel":
+        processor = DualExamProcessor(
+            exam_id_1=e1,
+            exam_id_2=e2,
+            db_path=db,
+            query_name=query_name,
+            base_subjects=base_subjects,
+            flat_rate=flat_rate,
+            include_inc=include_inc,
+            ranking_method=ranking_method,
+            necta_decimal_places=necta_decimal_places
+        )
+        processor.run() 
+    else:
+        console.print(f"[yellow]combine not implemented for {level}[/]")
     
 
 if __name__ == "__main__":
