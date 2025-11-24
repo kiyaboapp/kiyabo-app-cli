@@ -35,11 +35,18 @@ class DualExamProcessor:
     WHITE = Fore.WHITE + Style.BRIGHT
     RESET = Style.RESET_ALL
 
+    # === PERMANENT TABLES (NEW) ===
+    RESULTS_TABLE = "tbl_dual_combined_results"
+    METADATA_TABLE = "tbl_dual_exams"
+
     def __init__(
         self,
         exam_id_1: str,
         exam_id_2: str,
         db_path: str,
+        exam_name_1: str = None,        # ← NEW: Optional
+        exam_name_2: str = None,        # ← NEW: Optional
+        class_id: str = None,           # ← NEW: Optional
         query_name: str = "qry_CombinedExamResults",
         base_subjects: int = 7,
         flat_rate: bool = True,
@@ -54,6 +61,8 @@ class DualExamProcessor:
             exam_id_1: First exam identifier
             exam_id_2: Second exam identifier
             db_path: Path to Access database
+            exam_name_1 / exam_name_2: Optional human names (fallback to DB)
+            class_id: Optional class override (fallback to exam 2)
             query_name: Name for the saved query
             base_subjects: Number of subjects for base calculation (default: 7)
             flat_rate: Use flat rate calculation (default: True)
@@ -64,7 +73,10 @@ class DualExamProcessor:
         self.EXAM_ID_1 = exam_id_1
         self.EXAM_ID_2 = exam_id_2
         self.DB_PATH = db_path
-        self.QUERY_NAME =f"{exam_id_1}_{exam_id_2}"             #query_name
+        self.exam_name_1_input = exam_name_1
+        self.exam_name_2_input = exam_name_2
+        self.class_id_input = class_id
+        self.QUERY_NAME = f"{exam_id_1}_{exam_id_2}"             #query_name
         self.BASE_SUBJECTS = base_subjects
         self.FLAT_RATE = flat_rate
         self.INCLUDE_INC = include_inc
@@ -93,6 +105,11 @@ class DualExamProcessor:
         self.mark_columns = ['civ','his','geo','kis','eng','phy','che','bio','mat','edk','ics'] + \
                            [f'sub{i}' for i in range(12,21)]
 
+        # Resolved metadata (after DB lookup)
+        self.final_exam_name_1 = None
+        self.final_exam_name_2 = None
+        self.final_class_id = None
+
     def _connect_to_database(self):
         """Establish connection to Access database."""
         print(f"{self.CYAN}CONNECTING TO ACCESS DATABASE...")
@@ -101,6 +118,100 @@ class DualExamProcessor:
             f"DBQ={self.DB_PATH};"
         )
         self.cursor = self.conn.cursor()
+
+    def _fetch_exam_metadata(self):
+        """Fetch exam names and class_id if not provided"""
+        sql = """
+            SELECT exam_id, exam_name, class_id 
+            FROM tbl_student_exams 
+            WHERE exam_id IN (?, ?)
+        """
+        df = pd.read_sql(sql, self.conn, params=[self.EXAM_ID_1, self.EXAM_ID_2])
+        print(df)
+        for _, row in df.iterrows():
+            if row['exam_id'] == self.EXAM_ID_1:
+                self.final_exam_name_1 = self.exam_name_1_input or row['exam_name']
+            elif row['exam_id'] == self.EXAM_ID_2:
+                self.final_exam_name_2 = self.exam_name_2_input or row['exam_name']
+                self.final_class_id = self.class_id_input or str(row['class_id'])
+        if not all([self.final_exam_name_1, self.final_exam_name_2, self.final_class_id]):
+            raise ValueError(f"{self.RED}Failed to resolve exam metadata")
+
+    def _ensure_metadata_table(self):
+        sql = f"""
+            CREATE TABLE {self.METADATA_TABLE} (
+                combo_id AUTOINCREMENT PRIMARY KEY,
+                exam_id_1 TEXT(50),
+                exam_id_2 TEXT(50),
+                exam_name_1 TEXT(100),
+                exam_name_2 TEXT(100),
+                class_id TEXT(20),
+                processed_date DATETIME,
+                total_students LONG,
+                CONSTRAINT unique_combo UNIQUE (exam_id_1, exam_id_2)
+            )
+        """
+        try:
+            self.cursor.execute(sql)
+            self.conn.commit()
+        except:
+            pass  # already exists
+
+    def _ensure_base_table(self):
+        base_cols = """
+            result_id AUTOINCREMENT PRIMARY KEY,
+            student_id TEXT(50),
+            full_name TEXT(255),
+            sex TEXT(10),
+            subject_count_real LONG,
+            subject_count LONG,
+            total_marks DOUBLE,
+            avg_marks DOUBLE,
+            avg_grade TEXT(2),
+            points LONG,
+            division TEXT(10),
+            position DOUBLE,
+            out_of LONG,
+            necta_results MEMO,
+            processed_date DATETIME
+        """
+        try:
+            self.cursor.execute(f"CREATE TABLE {self.RESULTS_TABLE} ({base_cols})")
+            self.conn.commit()
+        except:
+            pass
+
+    def _add_missing_columns(self, df: pd.DataFrame):
+        """Dynamically add any column that doesn't exist in the permanent table"""
+        self.cursor.execute(f"SELECT * FROM {self.RESULTS_TABLE} WHERE 1=0")
+        existing = {col[0].lower() for col in self.cursor.description}
+
+        adds = []
+        for col in df.columns:
+            if col.lower() in existing:
+                continue
+            if any(x in col.lower() for x in ['grade', 'division', 'avg_grade']):
+                typ = "TEXT(10)"
+            elif any(x in col.lower() for x in ['pos', 'out_of', 'count', 'points']):
+                typ = "LONG"
+            elif any(x in col.lower() for x in ['mark', 'total', 'avg', 'position']):
+                typ = "DOUBLE"
+            elif col == "necta_results":
+                typ = "MEMO"
+            elif col in ["student_id", "full_name", "sex"]:
+                typ = "TEXT(255)" if col == "full_name" else "TEXT(50)"
+            else:
+                typ = "DOUBLE"
+            adds.append(f"ALTER TABLE {self.RESULTS_TABLE} ADD COLUMN [{col}] {typ}")
+
+        if adds:
+            print(f"{self.YELLOW}Adding {len(adds)} missing column(s) to {self.RESULTS_TABLE}...")
+            for sql in tqdm(adds, desc="Adding Columns", leave=False):
+                try:
+                    self.cursor.execute(sql)
+                except:
+                    pass
+            self.conn.commit()
 
     def load_exam_data(self, exam_id: str) -> pd.DataFrame:
         """Load data for a single exam."""
@@ -127,6 +238,9 @@ class DualExamProcessor:
         print(f"\n{self.GREEN}1. LOADING DUAL EXAM DATA")
         print("=" * 60)
 
+        self._connect_to_database()
+        self._fetch_exam_metadata()
+
         # Load both exams
         self.df_1 = self.load_exam_data(self.EXAM_ID_1)
         self.df_2 = self.load_exam_data(self.EXAM_ID_2)
@@ -135,13 +249,7 @@ class DualExamProcessor:
         students_sql = "SELECT student_id, full_name, sex FROM tbl_student_academic_info"
         self.students_df = pd.read_sql(students_sql, self.conn)
 
-        # Get class_id from first exam
-        exam_sql = "SELECT exam_id, class_id FROM tbl_student_exams WHERE exam_id = ?"
-        exam_df = pd.read_sql(exam_sql, self.conn, params=[self.EXAM_ID_1])
-        self.class_id = exam_df['class_id'].iloc[0] if not exam_df.empty else None
-
-        if self.class_id is None:
-            raise ValueError(f"{self.RED}Class ID could not be determined")
+        self.class_id = self.final_class_id
 
         print(f"{self.YELLOW}Class ID: {self.WHITE}{self.class_id}")
         print(f"{self.YELLOW}Exam 1 Students: {self.WHITE}{len(self.df_1):,}")
@@ -216,7 +324,7 @@ class DualExamProcessor:
 
         # Add student information
         df_merged = df_merged.merge(self.students_df, on='student_id', how='left')
-        print(f"{self.GREEN}✓ Successfully merged {len(df_merged):,} student records")
+        print(f"{self.GREEN}Successfully merged {len(df_merged):,} student records")
 
         print(f"\n{self.CYAN}Calculating subject averages...")
         # Calculate averages for each subject with progress bar
@@ -228,11 +336,11 @@ class DualExamProcessor:
             df_merged[col] = df_merged[[col_1, col_2]].mean(axis=1)
 
         self.df_combined = df_merged
-        print(f"{self.GREEN}✓ Calculated averages for {len(self.valid_subject_cols)} subjects")
+        print(f"{self.GREEN}Calculated averages for {len(self.valid_subject_cols)} subjects")
 
         # Show detailed comparison for first 4 subjects
         print(f"\n{self.MAGENTA}EXAM COMPARISON - DETAILED VIEW (First 10 Students)")
-        print(f"{self.WHITE}Showing: Exam 1 → Exam 2 → Average for first 4 subjects")
+        print(f"{self.WHITE}Showing: Exam 1 to Exam 2 to Average for first 4 subjects")
         print("=" * 120)
         
         sample_data = []
@@ -544,9 +652,9 @@ class DualExamProcessor:
                 if dup_cols:
                     self.df_combined.drop(columns=dup_cols, inplace=True)
 
-        print(f"{self.GREEN}✓ Completed subject-wise ranking for all subjects")
+        print(f"{self.GREEN}Completed subject-wise ranking for all subjects")
 
-        # Display sample subject ranking for first 3 subjects
+        # Display sample subject ranking for first 了个 subjects
         print(f"\n{self.MAGENTA}SUBJECT RANKING SAMPLE (First 3 Subjects - Top 10 Each)")
         print("=" * 100)
         
@@ -794,7 +902,7 @@ class DualExamProcessor:
 
         self.df_combined['necta_results'] = self.df_combined.apply(append_avg, axis=1)
 
-        print(f"\n{self.GREEN}✓ NECTA strings generated and finalized with AVG")
+        print(f"\n{self.GREEN}NECTA strings generated and finalized with AVG")
 
         # Show final NECTA sample with AVG
         print(f"\n{self.CYAN}FINAL NECTA RESULTS WITH AVG (Sample):")
@@ -815,168 +923,74 @@ class DualExamProcessor:
         
         print(tabulate(final_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
 
-    def save_as_query(self):
-        """Save the combined results as an Access query."""
-        print(f"\n{self.GREEN}10. SAVING COMBINED RESULTS AS ACCESS QUERY")
+    def save_results_permanently(self):
+        """Save combined results permanently to tbl_dual_combined_results (elastic)"""
+        print(f"\n{self.GREEN}10. SAVING COMBINED RESULTS PERMANENTLY")
         print("=" * 60)
 
-        # Drop existing query/view if it exists - try multiple approaches
-        drop_attempts = [
-            f"DROP VIEW {self.QUERY_NAME}",
-            f"DROP TABLE {self.QUERY_NAME}",
-        ]
-        
-        for drop_sql in drop_attempts:
-            try:
-                self.cursor.execute(drop_sql)
-                self.conn.commit()
-                print(f"{self.YELLOW}✓ Dropped existing object: {self.QUERY_NAME}")
-                break
-            except:
-                pass
-        
-        # Also try deleting from MSysObjects (Access system table) if above fails
+        # Ensure tables exist
+        self._ensure_base_table()
+        self._ensure_metadata_table()
+
+        # Add timestamp
+        self.df_combined['processed_date'] = datetime.datetime.now()
+
+        # Dynamically add any missing columns
+        self._add_missing_columns(self.df_combined)
+
+        # Remove old records for this exam pair
+        self.cursor.execute(f"""
+            DELETE FROM {self.RESULTS_TABLE}
+            WHERE student_id IN (
+                SELECT student_id FROM tbl_student_exam_results
+                WHERE exam_id IN (?, ?)
+            )
+        """, (self.EXAM_ID_1, self.EXAM_ID_2))
+        self.conn.commit()
+
+        # Insert all data
+        cols = [c for c in self.df_combined.columns]
+        placeholders = ','.join(['?'] * len(cols))
+        insert_sql = f"INSERT INTO {self.RESULTS_TABLE} ({','.join(cols)}) VALUES ({placeholders})"
+
+        data = []
+        for _, row in self.df_combined.iterrows():
+            row_data = []
+            for col in cols:
+                val = row[col]
+                if pd.isna(val):
+                    row_data.append(None)
+                else:
+                    row_data.append(val.item() if hasattr(val, 'item') else val)
+            data.append(tuple(row_data))
+
+        print(f"{self.CYAN}Inserting {len(data):,} records into {self.RESULTS_TABLE}...")
+        batch = 100
+        for i in tqdm(range(0, len(data), batch), desc="Saving Permanently"):
+            self.cursor.executemany(insert_sql, data[i:i+batch])
+            self.conn.commit()
+
+        # Log to metadata table
         try:
             self.cursor.execute(f"""
-                DELETE FROM MSysObjects 
-                WHERE Name = '{self.QUERY_NAME}' AND Type = 5
-            """)
+                INSERT INTO {self.METADATA_TABLE}
+                (exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id, processed_date, total_students)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                self.EXAM_ID_1, self.EXAM_ID_2,
+                self.final_exam_name_1, self.final_exam_name_2,
+                self.final_class_id,
+                datetime.datetime.now(),
+                len(self.df_combined)
+            ))
             self.conn.commit()
-            print(f"{self.YELLOW}✓ Removed query from system catalog: {self.QUERY_NAME}")
         except:
-            pass
+            pass  # already logged
 
-        # Build column list for SELECT statement
-        select_cols = ['student_id', 'full_name', 'sex']
-        
-        # Add subject columns with suffixes and position columns
-        for col in self.valid_subject_cols:
-            select_cols.extend([f"{col}_1", f"{col}_2", col])  # col is the average
-            # Add grade column
-            select_cols.append(f"{col}_grade")
-            # Add position columns if they exist
-            if f"{col}_pos" in self.df_combined.columns:
-                select_cols.extend([f"{col}_pos", f"{col}_out_of"])
-        
-        # Add aggregate columns
-        select_cols.extend([
-            'subject_count_real', 'subject_count', 'total_marks', 
-            'avg_marks', 'avg_grade', 'points', 'division', 'position', 'out_of', 'necta_results'
-        ])
-
-        # Create temporary table to store results
-        temp_table = f"tbl_temp_{self.QUERY_NAME}"
-        
-        # Drop temp table if exists
-        try:
-            self.cursor.execute(f"DROP TABLE {temp_table}")
-            self.conn.commit()
-            print(f"{self.YELLOW}✓ Dropped existing temp table: {temp_table}")
-        except:
-            pass
-
-        print(f"\n{self.CYAN}Creating table structure...")
-        # Define column types for table creation
-        col_definitions = []
-        col_definitions.append("student_id INT")
-        col_definitions.append("full_name TEXT(255)")
-        col_definitions.append("sex TEXT(10)")
-        
-        for col in self.valid_subject_cols:
-            col_definitions.append(f"{col}_1 DOUBLE")
-            col_definitions.append(f"{col}_2 DOUBLE")
-            col_definitions.append(f"{col} DOUBLE")
-            col_definitions.append(f"{col}_grade TEXT(2)")
-            if f"{col}_pos" in self.df_combined.columns:
-                col_definitions.append(f"{col}_pos INT")
-                col_definitions.append(f"{col}_out_of INT")
-        
-        col_definitions.extend([
-            "subject_count_real INT",
-            "subject_count INT",
-            "total_marks DOUBLE",
-            "avg_marks DOUBLE",
-            "avg_grade TEXT(2)",
-            "points INT",
-            "division TEXT(10)",
-            "position DOUBLE",
-            "out_of INT",
-            "necta_results MEMO"
-        ])
-
-        # Create table
-        create_sql = f"CREATE TABLE {temp_table} ({', '.join(col_definitions)})"
-        self.cursor.execute(create_sql)
-        self.conn.commit()
-
-        print(f"{self.GREEN}✓ Created temporary table: {self.WHITE}{temp_table}")
-        print(f"{self.CYAN}Table columns: {self.WHITE}{len(col_definitions)}")
-
-        # Insert data
-        insert_cols = [c for c in select_cols if c in self.df_combined.columns]
-        placeholders = ', '.join(['?' for _ in insert_cols])
-        insert_sql = f"INSERT INTO {temp_table} ({', '.join(insert_cols)}) VALUES ({placeholders})"
-
-        print(f"\n{self.CYAN}Preparing data for insertion...")
-        insert_data = []
-        for _, row in self.df_combined.iterrows():
-            values = []
-            for col in insert_cols:
-                value = row[col]
-                if pd.isna(value) or value is None:
-                    values.append(None)
-                else:
-                    if hasattr(value, 'item'):
-                        value = value.item()
-                    values.append(value)
-            insert_data.append(tuple(values))
-
-        print(f"{self.GREEN}✓ Prepared {len(insert_data):,} records for insertion")
-
-        # Batch insert
-        batch_size = 50
-        print(f"\n{self.CYAN}Inserting data into table (batch size: {batch_size})...")
-        with tqdm(total=len(insert_data), desc="Inserting Records", ncols=100, colour='green') as pbar:
-            for i in range(0, len(insert_data), batch_size):
-                batch = insert_data[i:i + batch_size]
-                self.cursor.executemany(insert_sql, batch)
-                self.conn.commit()
-                pbar.update(len(batch))
-
-        print(f"{self.GREEN}✓ Successfully inserted all records!")
-
-        # Create query pointing to table
-        print(f"\n{self.CYAN}Creating query view...")
-        query_sql = f"CREATE VIEW {self.QUERY_NAME} AS SELECT * FROM {temp_table}"
-        self.cursor.execute(query_sql)
-        self.conn.commit()
-
-        print(f"\n{self.GREEN}{'='*100}")
-        print(f"{self.GREEN}✓✓✓ QUERY SUCCESSFULLY CREATED ✓✓✓")
         print(f"{self.GREEN}{'='*100}")
-        print(f"{self.WHITE}Query Name: {self.CYAN}{self.QUERY_NAME}")
-        print(f"{self.WHITE}Backing Table: {self.CYAN}{temp_table}")
-        print(f"{self.WHITE}Total Records: {self.CYAN}{len(insert_data):,}")
-        print(f"{self.WHITE}Total Columns: {self.CYAN}{len(insert_cols)}")
-        
-        print(f"\n{self.MAGENTA}QUERY STRUCTURE PREVIEW:")
-        structure_preview = []
-        for i, col in enumerate(insert_cols[:15]):  # Show first 15 columns
-            structure_preview.append({
-                'No': i+1,
-                'Column Name': col,
-                'Type': 'Number' if any(x in col for x in ['mark', 'count', 'total', 'avg', 'point', 'position']) else 'Text'
-            })
-        
-        structure_df = pd.DataFrame(structure_preview)
-        print(tabulate(structure_df, headers='keys', tablefmt='fancy_grid', showindex=False))
-        
-        if len(insert_cols) > 15:
-            print(f"{self.YELLOW}... and {len(insert_cols) - 15} more columns")
-        
-        print(f"\n{self.CYAN}{'='*100}")
-        print(f"{self.CYAN}You can now open '{self.QUERY_NAME}' in Microsoft Access!")
-        print(f"{self.CYAN}{'='*100}")
+        print(f"{self.GREEN}RESULTS SAVED PERMANENTLY to {self.RESULTS_TABLE}")
+        print(f"{self.GREEN}METADATA LOGGED in {self.METADATA_TABLE}")
+        print(f"{self.GREEN}{'='*100}")
 
     def run(self):
         """Execute the complete dual exam processing pipeline."""
@@ -1000,7 +1014,6 @@ class DualExamProcessor:
         print(f"   • Start Time: {self.WHITE}{start_time.strftime('%Y-%m-%d %H:%M:%S')}")
         
         try:
-            self._connect_to_database()
             self.load_data()
             self.configure_subjects()
             self.combine_exams()
@@ -1010,46 +1023,19 @@ class DualExamProcessor:
             self.rank_subjects()
             self.rank_students()
             self.generate_necta_strings()
-            self.save_as_query()
-            
+            self.save_results_permanently()   # ← Replaces save_as_query
+
             end_time = datetime.datetime.now()
             duration = (end_time - start_time).total_seconds()
 
             print(f"\n{self.GREEN}{'='*100}")
             print(f"{self.GREEN}{'='*100}")
-            print(f"{self.GREEN}           ✓✓✓ PROCESS COMPLETED SUCCESSFULLY ✓✓✓")
+            print(f"{self.GREEN}           PROCESS COMPLETED SUCCESSFULLY")
             print(f"{self.GREEN}{'='*100}")
             print(f"{self.GREEN}{'='*100}")
-            
-            print(f"\n{self.CYAN}FINAL SUMMARY:")
-            summary_data = [
-                {'Metric': 'Total Students Processed', 'Value': f"{len(self.df_combined):,}"},
-                {'Metric': 'Active Subjects', 'Value': f"{len(self.valid_subject_cols)}"},
-                {'Metric': 'Valid Rankings', 'Value': f"{self.df_combined['position'].notna().sum():,}"},
-                {'Metric': 'Division I Students', 'Value': f"{len(self.df_combined[self.df_combined['division'] == 'I']):,}"},
-                {'Metric': 'Query Created', 'Value': self.QUERY_NAME},
-                {'Metric': 'Total Columns in Query', 'Value': f"{3 + (len(self.valid_subject_cols) * 6) + 10}"},
-                {'Metric': 'Processing Time', 'Value': f"{duration:.2f} seconds"},
-                {'Metric': 'End Time', 'Value': end_time.strftime('%Y-%m-%d %H:%M:%S')}
-            ]
-            
-            summary_df = pd.DataFrame(summary_data)
-            print(tabulate(summary_df, headers='keys', tablefmt='fancy_grid', showindex=False))
-            
-            print(f"\n{self.MAGENTA}QUERY DATA COMPLETENESS CHECK:")
-            completeness = [
-                {'Data Type': '✓ Individual Exam Marks (Exam 1 & 2)', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Average Marks per Subject', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Grades per Subject', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Subject Rankings (pos & out_of)', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Overall Student Rankings', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Points & Divisions', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ NECTA Results String', 'Status': 'INCLUDED'},
-                {'Data Type': '✓ Average Grade', 'Status': 'INCLUDED'}
-            ]
-            
-            completeness_df = pd.DataFrame(completeness)
-            print(tabulate(completeness_df, headers='keys', tablefmt='fancy_grid', showindex=False))
+            print(f"\n{self.CYAN}Results saved permanently to: {self.RESULTS_TABLE}")
+            print(f"{self.CYAN}Metadata saved to: {self.METADATA_TABLE}")
+            print(f"{self.CYAN}Processing time: {duration:.1f} seconds")
 
         except Exception as e:
             print(f"\n{self.RED}{'='*100}")
@@ -1074,7 +1060,9 @@ if __name__ == "__main__":
         exam_id_1="ANN320251117",
         exam_id_2="MID320251027",
         db_path=r"C:\Kiyabo App\backend\Kiyabo App Backend v2.0.0.accdb",
-        query_name="qry_CombinedANN_MID_Results",
+        exam_name_1="Annual Examination 2025",     # Optional
+        exam_name_2="Mid-Term Examination 2025",   # Optional
+        class_id="Form 4A",                        # Optional
         base_subjects=7,
         flat_rate=True,
         include_inc=True,
