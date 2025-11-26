@@ -76,12 +76,15 @@ class DualExamProcessor:
         self.exam_name_1_input = exam_name_1
         self.exam_name_2_input = exam_name_2
         self.class_id_input = class_id
-        self.QUERY_NAME = f"{exam_id_1}_{exam_id_2}"             #query_name
+        self.QUERY_NAME = f"{exam_id_1}_{exam_id_2}"
         self.BASE_SUBJECTS = base_subjects
         self.FLAT_RATE = flat_rate
         self.INCLUDE_INC = include_inc
         self.RANKING_METHOD = ranking_method.lower()
         self.NECTA_DECIMAL_PLACES = necta_decimal_places
+
+        # Consistent combo_id used everywhere
+        self.combo_id = f"{exam_id_1}_{exam_id_2}"
 
         # Validate ranking method
         valid_methods = ['min', 'max', 'average', 'dense', 'first']
@@ -140,15 +143,14 @@ class DualExamProcessor:
     def _ensure_metadata_table(self):
         sql = f"""
             CREATE TABLE {self.METADATA_TABLE} (
-                combo_id AUTOINCREMENT PRIMARY KEY,
+                combo_id TEXT(100) PRIMARY KEY,
                 exam_id_1 TEXT(50),
                 exam_id_2 TEXT(50),
                 exam_name_1 TEXT(100),
                 exam_name_2 TEXT(100),
                 class_id TEXT(20),
                 processed_date DATETIME,
-                total_students LONG,
-                CONSTRAINT unique_combo UNIQUE (exam_id_1, exam_id_2)
+                total_students LONG
             )
         """
         try:
@@ -159,6 +161,7 @@ class DualExamProcessor:
 
     def _ensure_base_table(self):
         base_cols = """
+            combo_id TEXT(100),
             result_id AUTOINCREMENT PRIMARY KEY,
             student_id TEXT(50),
             full_name TEXT(255),
@@ -198,8 +201,8 @@ class DualExamProcessor:
                 typ = "DOUBLE"
             elif col == "necta_results":
                 typ = "MEMO"
-            elif col in ["student_id", "full_name", "sex"]:
-                typ = "TEXT(255)" if col == "full_name" else "TEXT(50)"
+            elif col in ["student_id", "full_name", "sex", "combo_id"]:
+                typ = "TEXT(255)" if col == "full_name" else "TEXT(100)"
             else:
                 typ = "DOUBLE"
             adds.append(f"ALTER TABLE {self.RESULTS_TABLE} ADD COLUMN [{col}] {typ}")
@@ -654,7 +657,7 @@ class DualExamProcessor:
 
         print(f"{self.GREEN}Completed subject-wise ranking for all subjects")
 
-        # Display sample subject ranking for first 了个 subjects
+        # Display sample subject ranking for first 3 subjects
         print(f"\n{self.MAGENTA}SUBJECT RANKING SAMPLE (First 3 Subjects - Top 10 Each)")
         print("=" * 100)
         
@@ -923,6 +926,107 @@ class DualExamProcessor:
         
         print(tabulate(final_sample, headers='keys', tablefmt='fancy_grid', showindex=False))
 
+
+
+    def fetch_individual_exam_summaries(self):
+        print(f"\n{self.GREEN}11. ADDING INDIVIDUAL EXAM RESULTS (_1 & _2) + SUBJECT DETAILS")
+        print("=" * 78)
+
+        # 1. Fetch main summary columns
+        sql_summary = """
+            SELECT student_id, exam_id, 
+                avg_marks, avg_grade, points, division, position, out_of
+            FROM tbl_student_exam_results
+            WHERE exam_id IN (?, ?)
+        """
+        df_summary = pd.read_sql(sql_summary, self.conn, params=[self.EXAM_ID_1, self.EXAM_ID_2])
+
+        print(f"{self.CYAN}Overall summary fields to add:")
+        overall_fields = ['avg_marks', 'avg_grade', 'points', 'division', 'position', 'out_of']
+        print(f"   → {', '.join([f'{field}_1, {field}_2' for field in overall_fields])}")
+
+        if not df_summary.empty:
+            for col in overall_fields:
+                piv = df_summary.pivot(index='student_id', columns='exam_id', values=col).reset_index()
+                piv.columns = ['student_id'] + [
+                    f"{col}_1" if c == self.EXAM_ID_1 else f"{col}_2" for c in piv.columns[1:]
+                ]
+                self.df_combined = self.df_combined.merge(piv, on='student_id', how='left')
+
+        # 2. Fetch per-subject grade, position, out_of - CORRECTED LINE
+        subject_fields = ', '.join([
+            f"{sub}_grade, {sub}_pos, {sub}_out_of"
+            for sub in self.valid_subject_cols
+        ])
+
+        if subject_fields:
+            print(f"{self.CYAN}Per-subject fields to add:")
+            subject_field_list = []
+            for sub in self.valid_subject_cols:
+                subject_field_list.extend([f"{sub}_grade_1/2", f"{sub}_pos_1/2", f"{sub}_out_of_1/2"])
+            print(f"   → {', '.join(subject_field_list)}")
+            print(f"   → Total: {len(subject_field_list)} subject fields across {len(self.valid_subject_cols)} subjects")
+
+            sql_subjects = f"""
+                SELECT student_id, exam_id, {subject_fields}
+                FROM tbl_student_exam_results
+                WHERE exam_id IN (?, ?)
+            """
+            df_sub = pd.read_sql(sql_subjects, self.conn, params=[self.EXAM_ID_1, self.EXAM_ID_2])
+
+            if not df_sub.empty:
+                print(f"{self.CYAN}Processing {len(df_sub.columns) - 2} subject columns...")
+                for col in df_sub.columns:
+                    if col in ['student_id', 'exam_id']:
+                        continue
+                    piv = df_sub.pivot(index='student_id', columns='exam_id', values=col).reset_index()
+                    piv.columns = ['student_id'] + [
+                        f"{col}_1" if c == self.EXAM_ID_1 else f"{col}_2" for c in piv.columns[1:]
+                    ]
+                    self.df_combined = self.df_combined.merge(piv, on='student_id', how='left')
+
+        # Force numeric on all numeric columns
+        numeric_cols = ['avg_marks', 'points', 'position', 'out_of']
+        numeric_count = 0
+        for base in numeric_cols + self.valid_subject_cols:
+            for suffix in ['_pos', '_out_of', '']:
+                for exam in ['_1', '_2']:
+                    col_name = f"{base}{suffix}{exam}"
+                    if col_name in self.df_combined.columns:
+                        self.df_combined[col_name] = pd.to_numeric(self.df_combined[col_name], errors='coerce')
+                        numeric_count += 1
+
+        print(f"{self.GREEN}Successfully added:")
+        print(f"   → Overall: {len(overall_fields) * 2} fields (avg_marks_1/2, points_1/2, division_1/2, position_1/2...)")
+        if self.valid_subject_cols:
+            print(f"   → Per subject: {len(self.valid_subject_cols) * 3 * 2} fields (civ_grade_1/2, his_pos_1/2, geo_out_of_1/2, etc.)")
+        print(f"   → Converted {numeric_count} columns to numeric")
+
+        # BEAUTIFUL DISPLAY — SAME AS YOU LOVED
+        show = self.df_combined[['full_name',
+                                'avg_marks_1','avg_marks_2',
+                                'avg_grade_1','avg_grade_2',
+                                'points_1','points_2',
+                                'division_1','division_2',
+                                'position_1','position_2']].head(12).copy()
+
+        show['full_name'] = show['full_name'].str[:19]
+        show = show.round(1).fillna('—')
+
+        print(f"\n{self.CYAN}INDIVIDUAL EXAM RESULTS (EXAM 1 vs EXAM 2)".center(80))
+        print(f"{self.CYAN}" + "─" * 80)
+        print(tabulate(show,
+                    headers=['Name','Avg1','Avg2','Grd1','Grd2','Pts1','Pts2','Div1','Div2','Pos1','Pos2'],
+                    tablefmt='pretty',
+                    showindex=False,
+                    stralign='center',
+                    numalign='center'))
+        print(f"{self.CYAN}" + "─" * 80)
+        print(f"{self.GREEN}All individual + per-subject columns added successfully!")
+
+
+
+
     def save_results_permanently(self):
         """Save combined results permanently to tbl_dual_combined_results (elastic)"""
         print(f"\n{self.GREEN}10. SAVING COMBINED RESULTS PERMANENTLY")
@@ -932,20 +1036,15 @@ class DualExamProcessor:
         self._ensure_base_table()
         self._ensure_metadata_table()
 
-        # Add timestamp
+        # Add combo_id and timestamp
+        self.df_combined['combo_id'] = self.combo_id
         self.df_combined['processed_date'] = datetime.datetime.now()
-
+        
         # Dynamically add any missing columns
         self._add_missing_columns(self.df_combined)
 
-        # Remove old records for this exam pair
-        self.cursor.execute(f"""
-            DELETE FROM {self.RESULTS_TABLE}
-            WHERE student_id IN (
-                SELECT student_id FROM tbl_student_exam_results
-                WHERE exam_id IN (?, ?)
-            )
-        """, (self.EXAM_ID_1, self.EXAM_ID_2))
+        # Remove old records for this combo
+        self.cursor.execute(f"DELETE FROM {self.RESULTS_TABLE} WHERE combo_id = ?", (self.combo_id,))
         self.conn.commit()
 
         # Insert all data
@@ -970,28 +1069,38 @@ class DualExamProcessor:
             self.cursor.executemany(insert_sql, data[i:i+batch])
             self.conn.commit()
 
-        # Log to metadata table
+        # === LOG METADATA TO tbl_dual_exams (Access-compatible) ===
         try:
+            # First delete any existing record for this combo (in case we re-run)
+            self.cursor.execute(
+                f"DELETE FROM {self.METADATA_TABLE} WHERE combo_id = ?", 
+                (self.combo_id,)
+            )
+
+            # Then insert the fresh record
             self.cursor.execute(f"""
                 INSERT INTO {self.METADATA_TABLE}
-                (exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id, processed_date, total_students)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (combo_id, exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id, processed_date, total_students)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                self.EXAM_ID_1, self.EXAM_ID_2,
-                self.final_exam_name_1, self.final_exam_name_2,
+                self.combo_id,
+                self.EXAM_ID_1,
+                self.EXAM_ID_2,
+                self.final_exam_name_1,
+                self.final_exam_name_2,
                 self.final_class_id,
                 datetime.datetime.now(),
                 len(self.df_combined)
             ))
             self.conn.commit()
-        except:
-            pass  # already logged
+            print(f"{self.GREEN}METADATA LOGGED → {self.METADATA_TABLE} (combo_id: {self.combo_id})")
+        except Exception as e:
+            print(f"{self.RED}Failed to write metadata: {e}")
 
         print(f"{self.GREEN}{'='*100}")
         print(f"{self.GREEN}RESULTS SAVED PERMANENTLY to {self.RESULTS_TABLE}")
         print(f"{self.GREEN}METADATA LOGGED in {self.METADATA_TABLE}")
         print(f"{self.GREEN}{'='*100}")
-
 
     def update_dual_competency_analysis(self):
         """Calculate competency analysis from averaged grades and save to tbl_dual_competency with BEAUTIFUL output."""
@@ -1020,8 +1129,7 @@ class DualExamProcessor:
         except:
             pass  # already exists
 
-        combo_id = f"{self.EXAM_ID_1}_{self.EXAM_ID_2}"
-        self.cursor.execute("DELETE FROM tbl_dual_competency WHERE combo_id = ?", (combo_id,))
+        self.cursor.execute("DELETE FROM tbl_dual_competency WHERE combo_id = ?", (self.combo_id,))
 
         # ------------------------------------------------------------------
         # 2. GPA & Level Logic (same as original)
@@ -1096,7 +1204,7 @@ class DualExamProcessor:
                 INSERT INTO tbl_dual_competency 
                 (combo_id, exam_id_1, exam_id_2, subject_id, A_s, B_s, C_s, D_s, F_s, gpa, competency_level, processed_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (combo_id, self.EXAM_ID_1, self.EXAM_ID_2, subject_id, A, B, C, D, F, gpa, level, datetime.datetime.now()))
+            """, (self.combo_id, self.EXAM_ID_1, self.EXAM_ID_2, subject_id, A, B, C, D, F, gpa, level, datetime.datetime.now()))
 
             competency_data.append({
                 'No': len(competency_data) + 1,
@@ -1158,7 +1266,7 @@ class DualExamProcessor:
             print(f"\n{self.CYAN}Summary:")
             print(f"   • Subjects with valid data  : {self.WHITE}{valid_subjects}/{total_subjects}")
             print(f"   • Saved to table            : {self.WHITE}tbl_dual_competency")
-            print(f"   • Combo ID                  : {self.WHITE}{combo_id}")
+            print(f"   • Combo ID                  : {self.WHITE}{self.combo_id}")
             print(f"   • Processed at              : {self.WHITE}{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
             print(f"\n{self.GREEN}{Style.BRIGHT}DUAL COMPETENCY ANALYSIS COMPLETED SUCCESSFULLY!")
@@ -1166,9 +1274,6 @@ class DualExamProcessor:
 
         else:
             print(f"{self.RED}No competency data was generated!")
-
-
-
 
     def run(self):
         """Execute the complete dual exam processing pipeline."""
@@ -1195,6 +1300,7 @@ class DualExamProcessor:
             self.load_data()
             self.configure_subjects()
             self.combine_exams()
+            self.fetch_individual_exam_summaries()
             self.calculate_grades()
             self.aggregate_performance()
             self.calculate_points_and_division()

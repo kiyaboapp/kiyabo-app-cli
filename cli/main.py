@@ -281,6 +281,9 @@ def combine(
     e2: str = typer.Option(..., "--exam2", "-e2", help="Second exam ID"),
     db: str = typer.Option(..., "--db", "-d", help="Path to Access database (.accdb)"),
 
+    exam_name_1: str = typer.Option(None, "--exam1-name", help="Name of the first exam"),
+    exam_name_2: str = typer.Option(None, "--exam2-name", help="Name of the second exam"),
+
     query_name: str = typer.Option("qry_CombinedExamResults", "--query-name", "-q", help="Name of the query to create"),
     base_subjects: int = typer.Option(7, "--base-subjects", "-b", help="Number of base/best subjects"),
     flat_rate: bool = typer.Option(True, "--flat-rate/--no-flat-rate", help="Use flat division rate instead of weighted"),
@@ -298,6 +301,8 @@ def combine(
         processor = DualExamProcessor(
             exam_id_1=e1,
             exam_id_2=e2,
+            exam_name_1=exam_name_1,
+            exam_name_2=exam_name_2,
             db_path=db,
             query_name=query_name,
             base_subjects=base_subjects,
