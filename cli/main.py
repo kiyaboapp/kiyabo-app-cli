@@ -14,7 +14,7 @@ from .olevel.resultImport import OlevelResultImporter
 from .olevel.insert import OlevelStudentImporter
 from .olevel.combiner import DualExamProcessor
 
-from .alevel.ranking import process_exam as alevel_process_exam
+from .alevel.ranking import AlevelProcessor
 from .alevel.insert import AlevelStudentImporter
 from .alevel.importer import ExamDataImporter
 from .alevel.exporter import StudentExamExporter
@@ -58,7 +58,9 @@ def upload(
         success = importer.import_exam_data(exam_id, excel_path, db_path)
         console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
         if success and process_after:
-            process(level=level, exam_id=exam_id, db_path=db_path)
+            processor = AlevelProcessor(exam_id=exam_id, db_path=db_path)
+            processor.run()
+            console.print("[green]PROCESSING COMPLETE[/]")
     
     elif level == "olevel":
         importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path,force_import=True,process_after=process_after)
@@ -150,8 +152,18 @@ def process(
     try:
         level = level.lower()
         if level == "alevel":
-            alevel_process_exam(exam_id, db_path, include_INC=include_inc)
-            console.print("[green]PROCESSING COMPLETE[/]")
+            if sort_cols:
+                sort_cols_list = [col.strip() for col in sort_cols.split(",")]
+            else:
+                sort_cols_list = None
+
+            processor = AlevelProcessor(
+                exam_id=exam_id,
+                db_path=db_path,
+                sort_columns=sort_cols_list,
+                include_inc=include_inc
+                )
+            processor.run()
         
         elif level == "olevel":
             if sort_cols:

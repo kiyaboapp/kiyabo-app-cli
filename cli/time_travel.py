@@ -1,4 +1,4 @@
-from .alevel.ranking import process_exam as AlevelProcessor
+from .alevel.ranking import AlevelProcessor
 from .olevel.processDS import OlevelProcessor
 from .primary.process import ExamProcessor as PrimaryProcessor
 import pyodbc
@@ -93,8 +93,8 @@ class TimeTravelProcessor:
             processor = OlevelProcessor(exam_id=exam_data.exam_id, db_path=self.db_path)
             processor.run()
         elif self.level == "alevel":
-            processor = AlevelProcessor(exam_id=exam_data.exam_id, dbpath=self.db_path)
-            processor.time_travel_export()
+            processor = AlevelProcessor(exam_id=exam_data.exam_id, dbpath=self.db_path,)
+            processor.run()
         elif self.level == "primary":
             processor=PrimaryProcessor(db_path=self.db_path,exam_id=exam_data.exam_id)
             processor.complete_exam()
