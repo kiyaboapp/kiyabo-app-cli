@@ -71,7 +71,7 @@ class OlevelProcessor:
 
         # Default sort columns if none provided
         if sort_columns is None:
-            sort_columns = ['ranking_points', 'avg_marks', 'subject_count_real']
+            sort_columns = ['avg_marks', 'ranking_points', 'subject_count_real']
         self.sort_columns = sort_columns
 
         # Build sort directions dynamically based on column semantics

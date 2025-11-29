@@ -294,7 +294,7 @@ class ExamDataImporter:
 
             # Read Excel - EXACT SAME
             self.print_subheader("READING EXCEL FILE")
-            df = pd.read_excel(excel_path, header=None, skiprows=13)
+            df = pd.read_excel(excel_path, header=None, skiprows=13, engine='openpyxl')
             print(f"{Colors.GREEN}✓ Loaded {len(df)} student records{Colors.END}")
 
             # Get subjects with EXACT VBA sorting - EXACT SAME

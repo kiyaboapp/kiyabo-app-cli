@@ -321,7 +321,7 @@ class DualExamProcessor:
             self.df_1,
             self.df_2,
             on='student_id',
-            how='outer',
+            how='right',
             suffixes=('_1', '_2')
         )
 

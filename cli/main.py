@@ -48,10 +48,11 @@ def upload(
     exam_id: str = typer.Option(..., "--exam-id"),
     excel_path: str = typer.Option(..., "--excel"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
-    process_after: bool = typer.Option(False, "--process", help="Process after completion")
+    process_after: bool = typer.Option(False, "--process", is_flag=True, help="Process after completion")
 
 ):
     print_banner()
+    print(f"Uploading {level} data for exam ID {exam_id} from {excel_path} to {db_path} process_after={process_after}")
     if level == "alevel":
         importer = ExamDataImporter()
         success = importer.import_exam_data(exam_id, excel_path, db_path)
@@ -143,6 +144,7 @@ def process(
     db_path: str = typer.Option(r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb", "--db"),
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
     sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
+    flat_rate:bool=typer.Option(False,"--flat/--no-flat",help="Will yiu take Top Bests Subjects or Average All?")
 ):
     print_banner()
     try:
@@ -157,7 +159,7 @@ def process(
             else:
                 sort_cols_list = None
 
-            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc)
+            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc,flat_rate=flat_rate)
             processor.run()
             console.print("[green]PROCESSING COMPLETE[/]")
         
