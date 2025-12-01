@@ -42,27 +42,29 @@ class AlevelProcessor:
     
     # Fixed sorting rules
     SORT_ASCENDING = {
-        'points_for_rank': True,   # Lower is better
+        'points': True,   # Lower is better
         'avg_marks': False,         # Higher is better
         'subject_count': False,     # Higher is better
     }
     
     def __init__(self, exam_id: str, db_path: str, 
                  sort_columns: list = None,
-                 include_inc: bool = True):
+                 include_inc: bool = True,
+                 rank_method: str = 'min'):
         """
         Initialize the A-Level processor.
         
         Args:
             exam_id: The exam identifier (e.g., 'ANN520250526')
             db_path: Path to the Access database file
-            sort_columns: List of column names to sort by (default: ["points_for_rank", "avg_marks", "subject_count"])
+            sort_columns: List of column names to sort by (default: ["points", "avg_marks", "subject_count"])
             include_inc: Whether to include INC status or convert to penalty
         """
         self.exam_id = exam_id
         self.db_path = db_path
-        self.sort_columns = sort_columns or ["points_for_rank", "avg_marks", "subject_count"]
+        self.sort_columns = sort_columns or ["points", "avg_marks", "subject_count"]
         self.include_inc = include_inc
+        self.rank_method = rank_method
         
         # Build ascending list based on fixed rules
         self.sort_ascending = [self.SORT_ASCENDING[col] for col in self.sort_columns]
@@ -392,56 +394,64 @@ class AlevelProcessor:
         self.df = self.df.progress_apply(self.process_student_row, axis=1)
         console.print(" [green]- All student rows processed.[/green]")
         self._preview("FINAL RESULTS – First 12 Students", ['full_name','division','points','gpa','first','second','third'], highlight=['division','points','gpa'])
-    
+
     def compute_ranking(self):
-        """Compute school-wide and combination-specific rankings."""
+        """Compute school-wide and combination-specific rankings — USING ONLY sort_columns"""
         exam_df = self.df[self.df['exam_id'] == self.exam_id].copy()
         if exam_df.empty:
             return
-        
-        # Valid students: NOT ABS + HAS AT LEAST ONE MARK
+
+        # ONLY students with REAL points AND real avg_marks get ranked
         valid_students = exam_df[
             (exam_df['division'] != 'ABS') &
+            (exam_df['points'].notna()) &
+            (exam_df['avg_marks'].notna()) &
             (exam_df[self.valid_subjects].notna().any(axis=1))
         ].copy()
-        
-        invalid_students = exam_df[
-            (exam_df['division'] == 'ABS') |
-            (~exam_df[self.valid_subjects].notna().any(axis=1))
-        ].copy()
-        
+
+        invalid_students = exam_df.drop(valid_students.index)
+
         if valid_students.empty:
             self.df.loc[exam_df.index, ['position_school', 'out_of_school', 'position_comb', 'out_of_comb']] = pd.NA
             return
-        
-        # Prepare points_for_rank to handle None/NaN in points column
-        valid_students['points_for_rank'] = valid_students['points'].replace({None: np.inf, np.nan: np.inf})
-        
-        # Sort using parameterized columns and directions
-        valid_students = valid_students.sort_values(self.sort_columns, ascending=self.sort_ascending)
-        
-        n_valid = len(valid_students)
-        valid_students['position_school'] = np.arange(1, n_valid + 1)
-        valid_students['out_of_school'] = n_valid
-        
-        def assign_comb_rank(group):
-            group['points_for_rank'] = group['points'].replace({None: np.inf, np.nan: np.inf})
-            group = group.sort_values(self.sort_columns, ascending=self.sort_ascending)
-            group['position_comb'] = np.arange(1, len(group) + 1)
+
+        # Full sort by your exact rules
+        sorted_df = valid_students.sort_values(
+            by=self.sort_columns,
+            ascending=self.sort_ascending
+        ).copy()
+
+        # Primary column = the one that decides who is #1
+        primary_col = self.sort_columns[0]
+        ascending_primary = self.sort_ascending[0]
+
+        # SCHOOL RANK — ONLY by the first column you chose
+        sorted_df['position_school'] = sorted_df[primary_col].rank(
+            method=self.rank_method,
+            ascending=ascending_primary
+        ).astype('Int64')
+        sorted_df['out_of_school'] = len(sorted_df)
+
+        # COMBINATION RANK — same logic per group
+        def rank_comb(group):
+            group = group.sort_values(by=self.sort_columns, ascending=self.sort_ascending)
+            group['position_comb'] = group[primary_col].rank(
+                method=self.rank_method,
+                ascending=ascending_primary
+            ).astype('Int64')
             group['out_of_comb'] = len(group)
             return group
-        
-        valid_students = valid_students.groupby('comb_id', group_keys=False).apply(assign_comb_rank)
-        
-        self.df.loc[valid_students.index, ['position_school', 'out_of_school', 'position_comb', 'out_of_comb']] = \
-            valid_students[['position_school', 'out_of_school', 'position_comb', 'out_of_comb']]
-        
+
+        ranked_df = sorted_df.groupby('comb_id', group_keys=False).apply(rank_comb)
+
+        # Write back
+        self.df.loc[ranked_df.index, ['position_school', 'out_of_school', 'position_comb', 'out_of_comb']] = \
+            ranked_df[['position_school', 'out_of_school', 'position_comb', 'out_of_comb']]
+
+        # Everyone else gets no rank
         if not invalid_students.empty:
             self.df.loc[invalid_students.index, ['position_school', 'out_of_school', 'position_comb', 'out_of_comb']] = pd.NA
-        
-        if 'points_for_rank' in self.df.columns:
-            self.df = self.df.drop(columns=['points_for_rank'], errors='ignore')
-    
+
     def compute_subject_rankings(self):
         """Compute per-subject rankings."""
         for sub in tqdm(self.valid_subjects, desc="Ranking subjects"):
@@ -734,7 +744,7 @@ class AlevelProcessor:
 
 # Usage example:
 if __name__ == "__main__":
-    # Default sorting: points_for_rank, avg_marks, subject_count
+    # Default sorting: points, avg_marks, subject_count
     processor = AlevelProcessor(
         exam_id='ANN520250526',
         db_path=r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb",
@@ -746,7 +756,7 @@ if __name__ == "__main__":
     # processor = AlevelProcessor(
     #     exam_id='ANN520250526',
     #     db_path=r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb",
-    #     sort_columns=['avg_marks', 'points_for_rank', 'subject_count'],
+    #     sort_columns=['avg_marks', 'points', 'subject_count'],
     #     include_inc=True
     # )
     # processor.run()
