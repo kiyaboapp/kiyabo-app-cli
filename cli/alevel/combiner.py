@@ -189,16 +189,16 @@ class DualAlevelProcessor:
         return pyodbc.connect(self.conn_str)
     
     def create_dual_exam_table(self):
-        console.print("\n[bold cyan]Creating tbl)dual_exams if not exists[/bold cyan]")
+        console.print("\n[bold cyan]Creating tbl_dual_exams if not exists[/bold cyan]")
         conn = self.connect_db()
         cursor = conn.cursor()
         
         tables = [table.table_name for table in cursor.tables(tableType='TABLE')]
-        exists = 'tbl)dual_exams' in tables
+        exists = 'tbl_dual_exams' in tables
         
         if not exists:
             cursor.execute("""
-                CREATE TABLE tbl)dual_exams (
+                CREATE TABLE tbl_dual_exams (
                     combo_id TEXT(100) PRIMARY KEY,
                     exam_id_1 TEXT(50),
                     exam_id_2 TEXT(50),
@@ -208,9 +208,9 @@ class DualAlevelProcessor:
                 )
             """)
             conn.commit()
-            console.print(" [green]- tbl)dual_exams created[/green]")
+            console.print(" [green]- tbl_dual_exams created[/green]")
         else:
-            console.print(" [yellow]- tbl)dual_exams already exists[/yellow]")
+            console.print(" [yellow]- tbl_dual_exams already exists[/yellow]")
         
         # Get exam names if not provided
         if not self.exam_name_1 or not self.exam_name_2:
@@ -226,15 +226,15 @@ class DualAlevelProcessor:
                 self.exam_name_2 = row.iloc[0]['exam_name'] if not row.empty else self.exam_id_2
         
         # Insert/update combo record
-        cursor.execute("SELECT COUNT(*) FROM tbl)dual_exams WHERE combo_id = ?", (self.combo_id,))
+        cursor.execute("SELECT COUNT(*) FROM tbl_dual_exams WHERE combo_id = ?", (self.combo_id,))
         if cursor.fetchone()[0] == 0:
             cursor.execute("""
-                INSERT INTO tbl)dual_exams (combo_id, exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id)
+                INSERT INTO tbl_dual_exams (combo_id, exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (self.combo_id, self.exam_id_1, self.exam_id_2, self.exam_name_1, self.exam_name_2, None))
         else:
             cursor.execute("""
-                UPDATE tbl)dual_exams 
+                UPDATE tbl_dual_exams 
                 SET exam_name_1=?, exam_name_2=?
                 WHERE combo_id=?
             """, (self.exam_name_1, self.exam_name_2, self.combo_id))
