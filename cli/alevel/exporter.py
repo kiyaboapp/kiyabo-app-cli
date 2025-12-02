@@ -29,6 +29,9 @@ class Colors:
     UNDERLINE = '\033[4m'
     END = '\033[0m'
 
+
+
+
 def print_header(text):
     """Print a beautiful header"""
     width = 80
@@ -317,11 +320,19 @@ def print_subjects_table(title, subjects_df):
 
 class StudentExamExporter:
     """Exports student exam results from Access database to Excel with rankings and formatting"""
+
+    # Fixed sorting rules - EXACT column names from database
+    SORT_ASCENDING = {
+        'points': True,              # Lower is better
+        'avg_marks': False,          # Higher is better
+        'subject_count_all': False   # Higher is better (ALWAYS USE THIS!)
+    }
     
     def __init__(self, exam_id: str, db_path: str = r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", 
-                 include_comb_sheets: bool = False, order_by: str = "position",
-                 top_n: int = 10, bottom_n: int = 10, 
-                 paper_size: str = "A4", orientation: str = None):
+                include_comb_sheets: bool = False, order_by: str = "position",
+                top_n: int = 10, bottom_n: int = 10, 
+                paper_size: str = "A4", orientation: str = None,
+                sort_columns: list = None):
         """
         Initialize the exporter
         
@@ -334,6 +345,18 @@ class StudentExamExporter:
             bottom_n: Number of bottom students to show in summary table (default 10)
             paper_size: Paper size - "A4", "LTR" (Letter), or "A3" (default "A4")
             orientation: Page orientation - "portrait" or "landscape" (auto-detect if None)
+            sort_columns: List of EXACT database column names to sort by
+                        (default: ["points", "avg_marks", "subject_count_all"])
+                        
+                        VALID COLUMNS:
+                        - "points"             (lower is better)
+                        - "avg_marks"          (higher is better)
+                        - "subject_count_all"  (higher is better) ⚠️ USE THIS ONE since priotize even student who optionally seect subject for hobby
+                        
+                        Examples:
+                        - ["points", "avg_marks", "subject_count_all"]  # Default
+                        - ["avg_marks", "points", "subject_count_all"]  # Prioritize avg_marks
+                        - ["points", "avg_marks"]                        # Just these two
         """
         self.exam_id = exam_id
         self.db_path = db_path
@@ -343,13 +366,30 @@ class StudentExamExporter:
         self.bottom_n = bottom_n
         self.paper_size = paper_size.upper()
         self.orientation = orientation.lower() if orientation else None
+        
+        # NEW: Configurable sort columns - DEFAULT USES subject_count_all
+        self.sort_columns = sort_columns or ["avg_marks","points", "subject_count_all"]
+        
+        # Validate ALL columns are valid
+        for col in self.sort_columns:
+            if col not in self.SORT_ASCENDING:
+                valid_cols = list(self.SORT_ASCENDING.keys())
+                raise ValueError(
+                    f"Invalid sort column: '{col}'\n"
+                    f"Valid columns are: {valid_cols}\n"
+                    f"⚠️  Use 'subject_count_all' (NOT 'subject_count')"
+                )
+        
+        # Build ascending list based on fixed rules
+        self.sort_ascending = [self.SORT_ASCENDING[col] for col in self.sort_columns]
+        
         self.start_row = None
         self.excel_app = None
         self.workbook = None
         self.worksheet = None
         self.conn = None
 
-                # 🔍 Print all arguments for debugging
+        # 🔍 Print all arguments for debugging
         print("\n" + "=" * 80)
         print("🎯 StudentExamExporter Initialized with Arguments:")
         print("=" * 80)
@@ -362,6 +402,8 @@ class StudentExamExporter:
             "bottom_n": bottom_n,
             "paper_size": paper_size,
             "orientation": orientation,
+            "sort_columns": self.sort_columns,
+            "sort_ascending": self.sort_ascending,
         }.items():
             print(f"• {key:<20}: {value}")
         print("=" * 80 + "\n")
@@ -383,6 +425,9 @@ class StudentExamExporter:
         print_info(f"🔢 Order by: {self.order_by}")
         print_info(f"🏆 Top/Bottom N: {self.top_n}/{self.bottom_n}")
         print_info(f"📄 Paper: {self.paper_size}, Orientation: {self.orientation or 'auto'}")
+        print_info(f"📊 Sort by: {' → '.join(self.sort_columns)}")
+        print_info(f"📈 Sort order: {['ASC' if asc else 'DESC' for asc in self.sort_ascending]}")
+
         
     def list_tables(self):
         """Helper function to list all tables in the database for debugging"""
@@ -468,7 +513,7 @@ class StudentExamExporter:
         
         pythoncom.CoInitialize()
         self.excel_app = win32com.client.Dispatch("Excel.Application")
-        self.excel_app.Visible = False
+        self.excel_app.Visible = True
         self.excel_app.DisplayAlerts = False
         
         if Path(file_path).exists():
@@ -735,59 +780,203 @@ class StudentExamExporter:
             return {}
 
     def _calculate_rankings(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Calculate all rankings (overall, comb, class, by sex) - ONLY for students with avg_marks >= 0 - ORIGINAL LOGIC PRESERVED"""
+        """
+        Calculate all rankings with PROPER TIE HANDLING and CONFIGURABLE SORTING.
+        Rankings use Olympic-style: tied students get same rank, next rank is skipped.
+        Example: 1, 1, 3, 4 (not 1, 2, 3, 4)
+        
+        ✅ SYNCHRONIZED with AlevelProcessor to produce IDENTICAL rankings
+        """
         print_info(f"🏆 Calculating rankings for {len(df):,} students...")
+        print_info(f"📊 Sort criteria: {list(zip(self.sort_columns, ['↑ ASC' if asc else '↓ DESC' for asc in self.sort_ascending]))}")
         
-        # Filter only students with valid avg_marks (>= 0)
-        df_valid = df[df['avg_marks'] >= 0].copy()
-        print_info(f"🎯 Ranking {len(df_valid):,} students with avg_marks >= 0")
+        # ============================================================
+        # CRITICAL: IDENTICAL FILTERING LOGIC FOR BOTH FILES
+        # ============================================================
+        print(f"{Colors.CYAN}🔍 DEBUG: Total students before filtering: {len(df):,}{Colors.END}")
         
-        df_sorted = df_valid.copy()
-        
-        df_sorted['points_rank'] = df_sorted['points'].fillna(999999)
-        df_sorted['avg_marks_rank'] = df_sorted['avg_marks'].fillna(-1)
-        
-        df_sorted = df_sorted.sort_values(
-            by=['points_rank', 'avg_marks_rank', 'subject_count_all'],
-            ascending=[True, False, False]
+        # Filter criteria MUST match AlevelProcessor exactly
+        invalid_mask = (
+            (df['division'] == 'ABS') |
+            (df['points'].isna()) |
+            (df['avg_marks'].isna())
         )
         
-        # Overall ranking
-        df_sorted['overall_rank'] = range(1, len(df_sorted) + 1)
-        print_success("✅ Overall ranking complete")
+        df_valid = df[~invalid_mask].copy()
+        invalid_students = df[invalid_mask]
         
-        # Comb overall ranking
-        df_sorted['comb_overall_rank'] = df_sorted.groupby('comb_id').cumcount() + 1
+        print(f"{Colors.CYAN}🔍 DEBUG: Students with division='ABS': {(df['division'] == 'ABS').sum()}{Colors.END}")
+        print(f"{Colors.CYAN}🔍 DEBUG: Students with NaN points: {df['points'].isna().sum()}{Colors.END}")
+        print(f"{Colors.CYAN}🔍 DEBUG: Students with NaN avg_marks: {df['avg_marks'].isna().sum()}{Colors.END}")
+        print(f"{Colors.CYAN}🔍 DEBUG: Total invalid students: {len(invalid_students):,}{Colors.END}")
+        print(f"{Colors.CYAN}🔍 DEBUG: Total valid students: {len(df_valid):,}{Colors.END}")
+        
+        if df_valid.empty:
+            print_warning("⚠ No valid students to rank")
+            return df
+        
+        print_info(f"🎯 Ranking {len(df_valid):,} valid students")
+        
+        # ============================================================
+        # CRITICAL: IDENTICAL NaN HANDLING FOR BOTH FILES
+        # ============================================================
+        print_info(f"🔧 Preparing sort columns: {self.sort_columns}")
+        
+        for col in self.sort_columns:
+            before_fill = df_valid[col].isna().sum()
+            
+            if col == 'points':
+                df_valid[col] = df_valid[col].fillna(999999)
+            elif col == 'avg_marks':
+                df_valid[col] = df_valid[col].fillna(-1)
+            elif col in ['subject_count', 'subject_count_all']:
+                df_valid[col] = df_valid[col].fillna(0)
+            
+            after_fill = df_valid[col].isna().sum()
+            print(f"{Colors.CYAN}- {col}: filled {before_fill} NaN values → {after_fill} remaining{Colors.END}")
+        
+        # ⚠️ CRITICAL: Round to 4 decimal places to avoid floating point comparison issues
+        for col in ['points', 'avg_marks']:
+            if col in df_valid.columns:
+                df_valid[col] = df_valid[col].round(4)
+                print(f"{Colors.CYAN}- {col}: rounded to 4 decimal places{Colors.END}")
+        
+        # ============================================================
+        # OVERALL RANKING (SCHOOL-WIDE) - IDENTICAL TO PROCESSOR
+        # ============================================================
+        print(f"\n{Colors.YELLOW}{Colors.BOLD}🏆 School-Wide Ranking{Colors.END}")
+        print(f"{Colors.CYAN}- Sort criteria: {list(zip(self.sort_columns, ['↑ ASC' if asc else '↓ DESC' for asc in self.sort_ascending]))}{Colors.END}")
+        
+        # STEP 1: Sort by configured columns
+        df_sorted = df_valid.sort_values(
+            by=self.sort_columns,
+            ascending=self.sort_ascending
+        ).copy()
+        
+        # STEP 2: Create sort tuple AFTER sorting
+        df_sorted['_sort_tuple_overall'] = df_sorted[self.sort_columns].apply(
+            lambda row: tuple(row), axis=1
+        )
+        
+        # STEP 3: Get unique tuples in sorted order
+        unique_tuples = df_sorted['_sort_tuple_overall'].unique()
+        print(f"{Colors.CYAN}🔍 DEBUG: Found {len(unique_tuples):,} unique performance levels{Colors.END}")
+        
+        # STEP 4: Map each unique tuple to sequential ranks
+        rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
+        
+        # STEP 5: Assign ranks
+        df_sorted['overall_rank'] = df_sorted['_sort_tuple_overall'].map(rank_map)
+        
+        # Validation
+        max_rank = df_sorted['overall_rank'].max()
+        print_success(f"✅ Overall ranking complete (ranks 1-{max_rank})")
+        
+        # Count ties
+        rank_counts = df_sorted['overall_rank'].value_counts()
+        ties = rank_counts[rank_counts > 1]
+        if len(ties) > 0:
+            total_tied = ties.sum()
+            print_warning(f"⚠ Ties detected: {len(ties)} rank positions have ties ({total_tied} students total)")
+        
+        # 🔍 DEBUG: Export first 20 students for verification
+        debug_df = df_sorted.head(20)[['student_id', 'first_name', 'surname', 'points', 'avg_marks',
+                                        'subject_count_all', '_sort_tuple_overall', 'overall_rank']]
+        print(f"\n{Colors.MAGENTA}{Colors.BOLD}🔍 DEBUG: First 20 ranked students (for verification){Colors.END}")
+        for idx, row in debug_df.iterrows():
+            full_name = f"{row['first_name']} {row['surname']}"
+            print(f"{Colors.CYAN} {row['overall_rank']:3d}. {row['student_id']:15s} | "
+                f"pts:{row['points']:6.2f} avg:{row['avg_marks']:6.2f} cnt:{row['subject_count_all']:2.0f} | "
+                f"{full_name[:30]}{Colors.END}")
+        
+        # ============================================================
+        # COMB OVERALL RANKING - IDENTICAL TO PROCESSOR
+        # ============================================================
+        def rank_comb_overall(group):
+            """Rank students within combination - IDENTICAL to processor logic"""
+            group['_comb_sort_tuple'] = group[self.sort_columns].apply(
+                lambda row: tuple(row), axis=1
+            )
+            unique_tuples = group['_comb_sort_tuple'].unique()
+            rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
+            group['comb_overall_rank'] = group['_comb_sort_tuple'].map(rank_map)
+            return group.drop(columns=['_comb_sort_tuple'])
+        
+        df_sorted = df_sorted.groupby('comb_id', group_keys=False).apply(rank_comb_overall)
         print_success("✅ Comb overall ranking complete")
         
-        # Comb sex ranking
-        df_sorted['comb_sex_rank'] = df_sorted.groupby(['comb_id', 'sex']).cumcount() + 1
+        # ============================================================
+        # COMB SEX RANKING
+        # ============================================================
+        def rank_comb_sex(group):
+            """Rank students within combination by sex"""
+            group['_comb_sex_tuple'] = group[self.sort_columns].apply(
+                lambda row: tuple(row), axis=1
+            )
+            unique_tuples = group['_comb_sex_tuple'].unique()
+            rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
+            group['comb_sex_rank'] = group['_comb_sex_tuple'].map(rank_map)
+            return group.drop(columns=['_comb_sex_tuple'])
+        
+        df_sorted = df_sorted.groupby(['comb_id', 'sex'], group_keys=False).apply(rank_comb_sex)
         print_success("✅ Comb sex ranking complete")
         
-        # Class overall ranking
-        df_sorted['class_overall_rank'] = df_sorted.groupby('class_id').cumcount() + 1
+        # ============================================================
+        # CLASS OVERALL RANKING
+        # ============================================================
+        def rank_class_overall(group):
+            """Rank students within class"""
+            group['_class_sort_tuple'] = group[self.sort_columns].apply(
+                lambda row: tuple(row), axis=1
+            )
+            unique_tuples = group['_class_sort_tuple'].unique()
+            rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
+            group['class_overall_rank'] = group['_class_sort_tuple'].map(rank_map)
+            return group.drop(columns=['_class_sort_tuple'])
+        
+        df_sorted = df_sorted.groupby('class_id', group_keys=False).apply(rank_class_overall)
         print_success("✅ Class overall ranking complete")
         
-        # Class sex ranking
-        df_sorted['class_sex_rank'] = df_sorted.groupby(['class_id', 'sex']).cumcount() + 1
+        # ============================================================
+        # CLASS SEX RANKING
+        # ============================================================
+        def rank_class_sex(group):
+            """Rank students within class by sex"""
+            group['_class_sex_tuple'] = group[self.sort_columns].apply(
+                lambda row: tuple(row), axis=1
+            )
+            unique_tuples = group['_class_sex_tuple'].unique()
+            rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
+            group['class_sex_rank'] = group['_class_sex_tuple'].map(rank_map)
+            return group.drop(columns=['_class_sex_tuple'])
+        
+        df_sorted = df_sorted.groupby(['class_id', 'sex'], group_keys=False).apply(rank_class_sex)
         print_success("✅ Class sex ranking complete")
         
-        # Merge back with original df to include non-ranked students
+        # Clean up temporary columns
+        df_sorted = df_sorted.drop(columns=['_sort_tuple_overall'], errors='ignore')
+        
+        # ============================================================
+        # MERGE BACK WITH ORIGINAL DF
+        # ============================================================
         df_result = df.merge(
-            df_sorted[['student_id', 'overall_rank', 'comb_overall_rank', 'comb_sex_rank', 
-                      'class_overall_rank', 'class_sex_rank']],
+            df_sorted[['student_id', 'overall_rank', 'comb_overall_rank', 'comb_sex_rank',
+                    'class_overall_rank', 'class_sex_rank']],
             on='student_id',
             how='left'
         )
         
+        print_success(f"✅ All rankings calculated with synchronized logic")
+        
         return df_result
+
 
     def _calculate_total_counts(self, df: pd.DataFrame) -> Dict:
         """Calculate total counts for each grouping (where avg_marks >= 0) - ORIGINAL LOGIC PRESERVED"""
         print_info("📊 Calculating total counts for position denominators...")
         
         # Filter only students with valid avg_marks
-        df_valid = df[df['avg_marks'] >= 0].copy()
+        df_valid = df[df['division'] !='ABS'].copy()
         
         total_counts = {}
         

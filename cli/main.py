@@ -12,7 +12,8 @@ from .colors import console
 from .olevel.processDS import OlevelProcessor
 from .olevel.resultImport import OlevelResultImporter
 from .olevel.insert import OlevelStudentImporter
-from .olevel.combiner import DualExamProcessor
+from .olevel.combiner import DualExamProcessor as DualOlevelProcessor
+from .alevel.combiner import DualAlevelProcessor as DualAlevelProcessor
 
 from .alevel.ranking import AlevelProcessor
 from .alevel.insert import AlevelStudentImporter
@@ -113,7 +114,7 @@ def export(
     level: Level = typer.Argument(..., help="School level"),
     exam_id: str = typer.Option(..., "--exam-id"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
-    include_comb: bool = typer.Option(True, "--comb"),
+    include_comb: bool = typer.Option(True, "--comb/--no-comb"),
     top_n: int = typer.Option(10, "--top"),
     bottom_n: int = typer.Option(10, "--bottom"),
     order_by: str = typer.Option("position", "--order-by"),
@@ -304,6 +305,7 @@ def combine(
     include_inc: bool = typer.Option(True, "--include-inc/--no-include-inc", help="Include INC subjects in average calculation"),
     ranking_method: str = typer.Option("min", "--ranking", "-r", help="Ranking method: 'min', 'max' or 'total'"),
     necta_decimal_places: int = typer.Option(1, "--necta-dp", help="Decimal places for NECTA-style division (0 or 1)"),
+    sort_columns: str = typer.Option(None, "--sort-columns", "-s", help="Columns to sort by (comma-separated)"),
 ):
     """
     Combine two exams and save results as Access query.
@@ -311,8 +313,13 @@ def combine(
     print_banner()
     level=level.lower()
 
+    if sort_columns:
+        sort_columns_list = [col.strip() for col in sort_columns.split(",")]
+    else:
+        sort_columns_list = None
+
     if level=="olevel":
-        processor = DualExamProcessor(
+        processor = DualOlevelProcessor(
             exam_id_1=e1,
             exam_id_2=e2,
             exam_name_1=exam_name_1,
@@ -323,9 +330,23 @@ def combine(
             flat_rate=flat_rate,
             include_inc=include_inc,
             ranking_method=ranking_method,
-            necta_decimal_places=necta_decimal_places
+            necta_decimal_places=necta_decimal_places,
+            sort_columns=sort_columns_list
         )
         processor.run() 
+    
+    elif level=="alevel":
+        processor = DualAlevelProcessor(
+            exam_id_1=e1,
+            exam_id_2=e2,
+            exam_name_1=exam_name_1,
+            exam_name_2=exam_name_2,
+            db_path=db,
+            sort_columns=sort_columns_list,
+            include_inc=include_inc,
+            rank_method=ranking_method,
+        )
+        processor.run()
     else:
         console.print(f"[yellow]combine not implemented for {level}[/]")
     
