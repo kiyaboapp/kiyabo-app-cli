@@ -303,7 +303,7 @@ class ExamProcessor:
         # Get first 4 subject names for header
         subject_headers = [self.subject_mapping.get(col, col) for col in self.subject_columns[:4]]
        
-        headers = ["Pupil ID", "Full Name", "Sex", "Stream", "Subj", "Total", "Avg", "Grade", " | ".join(subject_headers)]
+        headers = ["ID", "Name", "Sex", "Stream", "Subj", "Total", "Avg", "Grade", " | ".join(subject_headers)]
         table_str = tabulate(preview_data, headers=headers, tablefmt="fancy_grid",
                            colalign=("left", "left", "center", "center", "center", "right", "right", "center", "left"))
        
@@ -358,13 +358,15 @@ class ExamProcessor:
                 row.get('sex', '-'),
                 row.get('section_id', '-'),
                 f"{row['avg_marks']:.1f}",
+                int(row.get('total_marks', 0)) if pd.notna(row.get('total_marks')) else 0,
+                int(row.get('subject_count', 0)) if pd.notna(row.get('subject_count')) else 0,
                 row.get('avg_grade', '-'),
                 best_subjects
             ])
-       
-        headers = ["Pos", "Pupil ID", "Full Name", "Sex", "Stream", "Avg", "Grade", "Best 3 Subjects"]
+        
+        headers = ["Pos", "ID", "Name", "Sex", "Stream", "Avg", "Total", "Subj", "Grade", "Top 3"]
         print(tabulate(top_data, headers=headers, tablefmt="fancy_grid",
-                      colalign=("center", "left", "left", "center", "center", "right", "center", "left")))
+                      colalign=("center", "left", "left", "center", "center", "right", "right", "right", "center", "left")))
        
         # Bottom 10 performers
         console.print("\n[bold red]BOTTOM 10 PERFORMERS (Need Support)[/bold red]\n")
@@ -389,12 +391,14 @@ class ExamProcessor:
                 row.get('sex', '-'),
                 row.get('section_id', '-'),
                 f"{row['avg_marks']:.1f}",
+                int(row.get('total_marks', 0)) if pd.notna(row.get('total_marks')) else 0,
+                int(row.get('subject_count', 0)) if pd.notna(row.get('subject_count')) else 0,
                 row.get('avg_grade', '-'),
                 weak_subjects
             ])
-       
+        
         print(tabulate(bottom_data, headers=headers, tablefmt="fancy_grid",
-                      colalign=("center", "left", "left", "center", "center", "right", "center", "left")))
+                      colalign=("center", "left", "left", "center", "center", "right", "right", "right", "center", "left")))
         console.print()
    
     def get_grade(self, marks: float) -> str:
@@ -430,9 +434,11 @@ class ExamProcessor:
         with console.status("[bold green]Computing totals and averages...", spinner="dots"):
             df['total_marks'] = df[self.subject_columns].sum(axis=1, skipna=True)
             df['subject_count'] = df[self.subject_columns].notna().sum(axis=1)
+            # Average = total marks / total number of subjects in the class
+            total_subjects = len(self.subject_columns)
             df['avg_marks'] = df.apply(
-                lambda row: row['total_marks'] / row['subject_count']
-                if row['subject_count'] > 0 else 0,
+                lambda row: row['total_marks'] / total_subjects
+                if row['total_marks'] > 0 else 0,
                 axis=1
             )
             df['out_of'] = (df['subject_count'] > 0).sum()
@@ -458,48 +464,48 @@ class ExamProcessor:
         return df
    
     def assign_student_positions(self, results_df: pd.DataFrame) -> pd.DataFrame:
-        """Rank students based on average marks"""
+        """Rank students based on total marks"""
         console.print("="*80)
         console.print("[bold white]STEP 2: ASSIGNING STUDENT POSITIONS[/bold white]")
         console.print("="*80 + "\n")
-       
+        
         df = results_df.copy()
         has_results = df['subject_count'] > 0
-       
+        
         console.print("[yellow]🏆 Overall ranking...[/yellow]")
-        df.loc[has_results, 'pos'] = df.loc[has_results, 'avg_marks'].rank(
+        df.loc[has_results, 'pos'] = df.loc[has_results, 'total_marks'].rank(
             method='min', ascending=False
         ).astype('Int64')
         df.loc[has_results, 'out_of'] = has_results.sum()
         console.print(f"[green]✓[/green] Ranked {has_results.sum()} students overall")
-       
+        
         if 'sex' in df.columns:
             console.print("\n[yellow]👥 Gender-based ranking...[/yellow]")
             sex_counts = {}
             for sex in df['sex'].dropna().unique():
                 mask = has_results & (df['sex'] == sex)
                 if mask.any():
-                    df.loc[mask, 'pos_sex'] = df.loc[mask, 'avg_marks'].rank(
+                    df.loc[mask, 'pos_sex'] = df.loc[mask, 'total_marks'].rank(
                         method='min', ascending=False
                     ).astype('Int64')
                     df.loc[mask, 'out_of_sex'] = mask.sum()
                     sex_counts[sex] = mask.sum()
-           
+            
             for sex, count in sex_counts.items():
                 console.print(f"[green]✓[/green] Ranked {count} students ({sex})")
-       
+        
         if 'section_id' in df.columns:
             console.print("\n[yellow]🎓 Stream-based ranking...[/yellow]")
             stream_counts = {}
             for stream in df['section_id'].dropna().unique():
                 mask = has_results & (df['section_id'] == stream)
                 if mask.any():
-                    df.loc[mask, 'pos_stream'] = df.loc[mask, 'avg_marks'].rank(
+                    df.loc[mask, 'pos_stream'] = df.loc[mask, 'total_marks'].rank(
                         method='min', ascending=False
                     ).astype('Int64')
                     df.loc[mask, 'out_of_stream'] = mask.sum()
                     stream_counts[stream] = mask.sum()
-           
+            
             for stream, count in stream_counts.items():
                 console.print(f"[green]✓[/green] Ranked {count} students (Stream: {stream})")
        
@@ -726,7 +732,11 @@ class ExamProcessor:
                 values = []
                
                 for field in update_fields:
-                    if field in row.index and pd.notna(row[field]):
+                    # Always set subject_count to total number of subjects in class
+                    if field == 'subject_count':
+                        set_parts.append(f"[{field}] = ?")
+                        values.append(len(self.subject_columns))
+                    elif field in row.index and pd.notna(row[field]):
                         set_parts.append(f"[{field}] = ?")
                         values.append(row[field])
                

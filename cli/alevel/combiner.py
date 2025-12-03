@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 from rich.text import Text
+from datetime import datetime
 
 tqdm.pandas()
 
@@ -49,6 +50,7 @@ class DualAlevelProcessor:
                  exam_name_1: str = None, exam_name_2: str = None,
                  sort_columns: list = None,
                  include_inc: bool = True,
+                 class_id:str=None,
                  rank_method: str = 'min'):
         self.exam_id_1 = exam_id_1
         self.exam_id_2 = exam_id_2
@@ -73,6 +75,7 @@ class DualAlevelProcessor:
         
         self.exam_name_1 = exam_name_1
         self.exam_name_2 = exam_name_2
+        self.class_id = class_id
         
     @staticmethod
     def bracket_field(field: str) -> str:
@@ -212,9 +215,9 @@ class DualAlevelProcessor:
         else:
             console.print(" [yellow]- tbl_dual_exams already exists[/yellow]")
         
-        # Get exam names if not provided
-        if not self.exam_name_1 or not self.exam_name_2:
-            exam_query = "SELECT exam_id, exam_name FROM tbl_student_exams WHERE exam_id IN (?, ?)"
+        # Get exam names and class_id if not provided
+        if not self.exam_name_1 or not self.exam_name_2 or not self.class_id:
+            exam_query = "SELECT exam_id, exam_name, class_id FROM tbl_student_exams WHERE exam_id IN (?, ?)"
             exam_df = pd.read_sql(exam_query, conn, params=[self.exam_id_1, self.exam_id_2])
             
             if not self.exam_name_1:
@@ -224,6 +227,10 @@ class DualAlevelProcessor:
             if not self.exam_name_2:
                 row = exam_df[exam_df['exam_id'] == self.exam_id_2]
                 self.exam_name_2 = row.iloc[0]['exam_name'] if not row.empty else self.exam_id_2
+            
+            if not self.class_id:
+                row = exam_df[exam_df['exam_id'] == self.exam_id_2]
+                self.class_id = row.iloc[0]['class_id'] if not row.empty and pd.notna(row.iloc[0]['class_id']) else None
         
         # Insert/update combo record
         cursor.execute("SELECT COUNT(*) FROM tbl_dual_exams WHERE combo_id = ?", (self.combo_id,))
@@ -231,13 +238,13 @@ class DualAlevelProcessor:
             cursor.execute("""
                 INSERT INTO tbl_dual_exams (combo_id, exam_id_1, exam_id_2, exam_name_1, exam_name_2, class_id)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (self.combo_id, self.exam_id_1, self.exam_id_2, self.exam_name_1, self.exam_name_2, None))
+            """, (self.combo_id, self.exam_id_1, self.exam_id_2, self.exam_name_1, self.exam_name_2, self.class_id))
         else:
             cursor.execute("""
                 UPDATE tbl_dual_exams 
-                SET exam_name_1=?, exam_name_2=?
+                SET exam_name_1=?, exam_name_2=?, class_id=?
                 WHERE combo_id=?
-            """, (self.exam_name_1, self.exam_name_2, self.combo_id))
+            """, (self.exam_name_1, self.exam_name_2, self.class_id, self.combo_id))
         
         conn.commit()
         conn.close()
@@ -312,7 +319,9 @@ class DualAlevelProcessor:
                     avg_marks_2 DOUBLE,
                     subject_count_all_2 INTEGER,
                     necta_results_2 MEMO,
-                    necta_results_marks_2 MEMO
+                    necta_results_marks_2 MEMO,
+                    class_id TEXT(50),
+                    processed_date DATETIME
                 )
             """)
             conn.commit()
@@ -320,14 +329,15 @@ class DualAlevelProcessor:
         else:
             console.print(" [yellow]- tbl_dual_combined_results exists[/yellow]")
 
-            # Ensure new exam_id_1 and exam_id_2 columns exist on older databases
+            # Ensure new exam_id_1, exam_id_2, class_id, and processed_date columns exist on older databases
             existing_cols = [c.column_name.lower() for c in cursor.columns(table='tbl_dual_combined_results')]
-            for col_name in ['exam_id_1', 'exam_id_2']:
+            for col_name, col_type in [('exam_id_1', 'TEXT(50)'), ('exam_id_2', 'TEXT(50)'), 
+                                       ('class_id', 'TEXT(50)'), ('processed_date', 'DATETIME')]:
                 if col_name not in existing_cols:
                     try:
                         cursor.execute(
                             f"ALTER TABLE tbl_dual_combined_results "
-                            f"ADD COLUMN {self.bracket_field(col_name)} TEXT(50)"
+                            f"ADD COLUMN {self.bracket_field(col_name)} {col_type}"
                         )
                         conn.commit()
                         console.print(f" [green]+ Added column: {col_name}[/green]")
@@ -995,6 +1005,8 @@ class DualAlevelProcessor:
             ('subject_count_all', 'INTEGER'),
             ('necta_results', 'MEMO'),
             ('necta_results_marks', 'MEMO'),
+            ('class_id', 'TEXT(50)'),
+            ('processed_date', 'DATETIME'),
         ]
         
         # Historic fields with _1 and _2 suffixes
@@ -1084,7 +1096,7 @@ class DualAlevelProcessor:
                     'division', 'points', 'subject_count', 'total_marks', 'gpa',
                     'position_comb', 'position_school', 'out_of_comb', 'out_of_school',
                     'first', 'second', 'third', 'avg_grade', 'avg_marks', 'subject_count_all',
-                    'necta_results', 'necta_results_marks']
+                    'necta_results', 'necta_results_marks', 'class_id', 'processed_date']
         
         # Subject fields - combined, exam 1, and exam 2
         subject_fields = []
@@ -1109,7 +1121,7 @@ class DualAlevelProcessor:
         for f in all_fields:
             if f in self.df.columns:
                 insert_fields.append(f)
-            elif f in ('combo_id', 'exam_id_1', 'exam_id_2'):
+            elif f in ('combo_id', 'exam_id_1', 'exam_id_2', 'class_id', 'processed_date'):
                 insert_fields.append(f)
         
         console.print(f" [yellow]- Inserting {len(insert_fields)} fields[/yellow]")
@@ -1119,6 +1131,9 @@ class DualAlevelProcessor:
         field_str = ', '.join([self.bracket_field(f) for f in insert_fields])
         
         insert_query = f"INSERT INTO tbl_dual_combined_results ({field_str}) VALUES ({placeholders})"
+        
+        # Get current date/time for processed_date
+        current_datetime = datetime.now()
         
         # Insert records
         for _, row in tqdm(self.df.iterrows(), total=len(self.df), desc="Inserting records"):
@@ -1130,6 +1145,10 @@ class DualAlevelProcessor:
                     values.append(self.exam_id_1)
                 elif field == 'exam_id_2':
                     values.append(self.exam_id_2)
+                elif field == 'class_id':
+                    values.append(self.class_id)
+                elif field == 'processed_date':
+                    values.append(current_datetime)
                 else:
                     val = row.get(field)
                     # Convert numpy/pandas types to native Python types

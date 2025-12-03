@@ -49,8 +49,8 @@ def upload(
     exam_id: str = typer.Option(..., "--exam-id"),
     excel_path: str = typer.Option(..., "--excel"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
-    process_after: bool = typer.Option(False, "--process", is_flag=True, help="Process after completion")
-
+    process_after: bool = typer.Option(False, "--process", is_flag=True, help="Process after completion"),
+    sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)")
 ):
     print_banner()
     print(f"Uploading {level} data for exam ID {exam_id} from {excel_path} to {db_path} process_after={process_after}")
@@ -59,7 +59,9 @@ def upload(
         success = importer.import_exam_data(exam_id, excel_path, db_path)
         console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
         if success and process_after:
-            processor = AlevelProcessor(exam_id=exam_id, db_path=db_path)
+            processor = AlevelProcessor(exam_id=exam_id, 
+                        db_path=db_path, sort_columns=[col.strip() for col in sort_columns.split(",")] if sort_columns else None,
+                        )
             processor.run()
             console.print("[green]PROCESSING COMPLETE[/]")
     
