@@ -88,6 +88,7 @@ def import_(
     excel_path: str = typer.Option(..., "--excel", "-e", help="Path to Excel file"),
     db_path: str = typer.Option(..., "--db", "-d", help="Path to database file"),
     save_folder: str = typer.Option(r"C:\Kiyabo App\admission", "--save-folder", "-s", help="Folder to save processed files"),
+    academic_year: int = typer.Option(None, "--academic-year", "-y", help="Academic year (defaults to current year if not specified)"),
 ):
     level=level.lower()
     class_id=class_id.upper()
@@ -102,7 +103,7 @@ def import_(
         importer.run()
 
     elif level=="primary":
-        importer=PrimaryPupilImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
+        importer=PrimaryPupilImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id,academic_year=academic_year)
         importer.run()
         
     else:
@@ -307,7 +308,7 @@ def combine(
     include_inc: bool = typer.Option(True, "--include-inc/--no-include-inc", help="Include INC subjects in average calculation"),
     ranking_method: str = typer.Option("min", "--ranking", "-r", help="Ranking method: 'min', 'max' or 'total'"),
     necta_decimal_places: int = typer.Option(1, "--necta-dp", help="Decimal places for NECTA-style division (0 or 1)"),
-    sort_columns: str = typer.Option(None, "--sort-columns", "-s", help="Columns to sort by (comma-separated)"),
+    sort_columns: str = typer.Option(None, "--sort-cols", "-s", help="Columns to sort by (comma-separated)"),
 ):
     """
     Combine two exams and save results as Access query.

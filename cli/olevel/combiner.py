@@ -52,7 +52,8 @@ class DualExamProcessor:
         flat_rate: bool = True,
         include_inc: bool = True,
         ranking_method: str = "min",
-        necta_decimal_places: int = 1
+        necta_decimal_places: int = 1,
+        sort_columns: list = None,
     ):
         """
         Initialize Dual Exam Processor.
@@ -92,7 +93,11 @@ class DualExamProcessor:
             raise ValueError(f"Invalid ranking_method '{ranking_method}'. Must be one of: {valid_methods}")
 
         # Sort configuration for average ranking
-        self.sort_columns = ['ranking_points', 'avg_marks', 'subject_count_real']
+        if sort_columns is not None:
+            self.sort_columns = sort_columns
+        else:
+            self.sort_columns = ['avg_marks', 'ranking_points', 'subject_count_real']
+        
         self.ascending = [True, False, False]  # points ASC, marks DESC, count DESC
 
         # Database connections

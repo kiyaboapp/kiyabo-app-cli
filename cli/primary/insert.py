@@ -26,7 +26,8 @@ class PrimaryPupilImporter:
         excel_path: str,
         class_id: str,
         db_path: str = r"C:\Kiyabo App\backend\Kiyabo App Backend v3.0.0.accdb",
-        save_folder: str = r"C:\Kiyabo App\admission"
+        save_folder: str = r"C:\Kiyabo App\admission",
+        academic_year: int = None
     ):
         # ALL PARAMETERS IN __INIT__ — AS YOU DEMANDED
         self.excel_path = excel_path
@@ -37,6 +38,8 @@ class PrimaryPupilImporter:
         self.GREEN_FILL = PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid")
         self.RED_FILL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
         self.console = Console()
+        # Set academic_year to current year if None
+        self.academic_year = academic_year if academic_year is not None else datetime.now().year
 
     @staticmethod
     def get_class_number(class_id: str) -> int:
@@ -149,6 +152,7 @@ class PrimaryPupilImporter:
             admission_records = []
             family_records = []
             health_records = []        # ← NEW: only pupil_id
+            enrollment_records = []    # ← NEW: pupil_id, class_id, section_id, academic_year
             family_keys = [
                 "pupil_id", "date_of_birth", "father_name", "father_occupation", "father_phone", "father_phone_alternative",
                 "mother_name", "mother_occupation", "mother_phone", "mother_phone_alternative",
@@ -237,6 +241,14 @@ class PrimaryPupilImporter:
                     # 4. Health Info – only pupil_id (one-to-many)
                     health_records.append((pupil_id,))
 
+                    # 5. Enrollment Info – pupil_id, class_id, section_id, academic_year
+                    enrollment_records.append((
+                        pupil_id,
+                        CLASS_ID,
+                        section_id if section_id else None,
+                        self.academic_year
+                    ))
+
                 status = "[red]SKIPPED[/red]" if skip_reason else "[green]INSERTED[/green]"
                 table.add_row(str(serial), pupil_id if not skip_reason else "—",
                             full_name[:27] + ("…" if len(full_name) > 27 else ""), sex, CLASS_ID, section or "—", status)
@@ -285,6 +297,16 @@ class PrimaryPupilImporter:
                         conn.commit()
                         pbar.update(len(health_records[i:i+batch_size]))
 
+            if enrollment_records:
+                print("\n")
+                with tqdm(total=len(enrollment_records), desc="Inserting Enrollment Records", unit="rec") as pbar:
+                    for i in range(0, len(enrollment_records), batch_size):
+                        cur.executemany("""INSERT INTO [tbl_pupil_enrollements]
+                            (pupil_id, class_id, section_id, academic_year) VALUES (?, ?, ?, ?)""",
+                            enrollment_records[i:i+batch_size])
+                        conn.commit()
+                        pbar.update(len(enrollment_records[i:i+batch_size]))
+
             # SAVE EXCEL
             timestamp = datetime.now().strftime("%d%b%Y %H%M%S")
             new_file = self.SAVE_FOLDER / f"UPLOADED Form {CLASS_ID} {timestamp}.xlsx"
@@ -304,6 +326,7 @@ class PrimaryPupilImporter:
             summary.add_row("Admission Records", str(len(admission_records)))
             summary.add_row("Family Records", str(len(family_records)))
             summary.add_row("Health Records", str(len(health_records)))
+            summary.add_row("Enrollment Records", str(len(enrollment_records)))
             summary.add_row("Time Taken", f"{int(mins)} min {secs:.1f} sec")
             summary.add_row("Saved File", new_file.name)
 

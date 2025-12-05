@@ -26,7 +26,7 @@ class DualAlevelProcessor:
     DB_UPDATE_FIELDS = [
         "division", "points", "subject_count", "total_marks", "gpa",
         "position_comb", "position_school", "out_of_comb", "out_of_school",
-        "first", "second", "third", 'avg_grade',
+        "first", "second", "third", 'avg_grade', 'avg_marks',
         "subject_count_all", "necta_results", "necta_results_marks"
     ]
     
