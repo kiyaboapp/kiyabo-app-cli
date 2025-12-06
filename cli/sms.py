@@ -16,8 +16,16 @@ from rich.table import Table
 from rich.text import Text
 from rich.layout import Layout
 from rich import box
-import tkinter as tk
-from tkinter import filedialog, messagebox
+# Optional tkinter import - may not be available in all Python installations
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    TKINTER_AVAILABLE = True
+except ImportError:
+    TKINTER_AVAILABLE = False
+    tk = None
+    filedialog = None
+    messagebox = None
 from tabulate import tabulate
 from datetime import datetime
 
@@ -54,9 +62,17 @@ class SMSSender:
             'details': []
         }
         
-        # Initialize Tkinter root (hidden)
-        self.root = tk.Tk()
-        self.root.withdraw()  # Hide the main window
+        # Initialize Tkinter root (hidden) - only if available
+        self.tkinter_available = TKINTER_AVAILABLE
+        if self.tkinter_available:
+            try:
+                self.root = tk.Tk()
+                self.root.withdraw()  # Hide the main window
+            except Exception:
+                self.tkinter_available = False
+                self.root = None
+        else:
+            self.root = None
         
     def clear_screen(self):
         """Clear the console screen"""
@@ -210,25 +226,153 @@ class SMSSender:
             self.console.print(error_panel)
             return
         
-        # Get phone number from user
-        self.console.print("📞 [bold cyan]Enter Phone Number[/bold cyan]")
+        # Get phone number from user FIRST
+        self.console.print("📞 [bold cyan]Enter Phone Number for Test SMS[/bold cyan]")
         self.console.print("   [dim]Example: 0712345678 or +255712345678[/dim]")
         phone_number = Prompt.ask("   [yellow]Phone number[/yellow]")
         
+        if not phone_number or not phone_number.strip():
+            error_panel = Panel(
+                "[bold red]Phone number cannot be empty![/bold red]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            return
+        
         normalized_phone = self.normalize_phone(phone_number)
+        if not normalized_phone or len(normalized_phone) < 12:
+            error_panel = Panel(
+                "[bold red]Invalid phone number format![/bold red]\n"
+                f"[yellow]Could not normalize: {phone_number}[/yellow]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            return
+        
         self.console.print(f"   ✓ Normalized to: [bright_green]{normalized_phone}[/bright_green]\n")
         
-        # Get message from user
-        self.console.print("💬 [bold cyan]Enter Test Message[/bold cyan]")
-        self.console.print("   [dim]Enter the message you want to send[/dim]")
-        message = Prompt.ask("   [yellow]Message[/yellow]")
+        # Check if Excel file is loaded and has messages
+        message = None
+        first_message_available = False
+        first_message_raw = ""
+        first_student = ""
         
-        # Show confirmation panel
+        if self.excel_path and os.path.exists(self.excel_path):
+            try:
+                workbook = openpyxl.load_workbook(self.excel_path)
+                sheet = workbook.active
+                # Check if there's a message in row 2, column 3 (SMS message column)
+                if sheet.cell(row=2, column=3).value:
+                    first_message_available = True
+                    first_message_raw = str(sheet.cell(row=2, column=3).value or "").strip()
+                    first_student = str(sheet.cell(row=2, column=2).value or "").strip()
+                workbook.close()
+            except Exception as e:
+                self.console.print(f"[dim yellow]⚠️  Could not read Excel file: {str(e)}[/dim yellow]\n")
+        
+        # Let user choose message source
+        if first_message_available and first_message_raw:
+            self.console.print("💬 [bold cyan]Choose Message Source[/bold cyan]")
+            self.console.print("   [1] ✏️  [white]Write a new message[/white]")
+            self.console.print(f"   [2] 📋 [white]Use first message from Excel table[/white]")
+            if first_student:
+                self.console.print(f"       [dim](From record: {first_student})[/dim]")
+            self.console.print()
+            
+            msg_choice = Prompt.ask("   [yellow]Choose option[/yellow]", choices=["1", "2"], default="2")
+            
+            if msg_choice == '2':
+                message = first_message_raw
+                # Show preview of the message that will be used - FULL MESSAGE, NO TRUNCATION
+                self.console.print()
+                # Escape Rich markup to prevent rendering issues
+                preview_display = str(first_message_raw).replace('[', '\\[').replace(']', '\\]')
+                preview_panel = Panel(
+                    f"[white]{preview_display}[/white]",
+                    title=f"[bold bright_green]📋 First Message from Excel (Student: {first_student or 'N/A'})[/bold bright_green]",
+                    border_style="bright_green",
+                    box=box.ROUNDED,
+                    expand=False
+                )
+                self.console.print(preview_panel)
+                self.console.print()
+            else:
+                self.console.print("\n💬 [bold cyan]Enter Test Message[/bold cyan]")
+                self.console.print("   [dim]Enter the message you want to send[/dim]")
+                message = Prompt.ask("   [yellow]Message[/yellow]")
+        else:
+            # No Excel file loaded or no message available, just ask for message
+            if not self.excel_path:
+                self.console.print("[dim]ℹ️  No Excel file loaded. Enter message manually.[/dim]\n")
+            elif not first_message_available:
+                self.console.print("[dim]ℹ️  Excel file loaded but no message found in first record.[/dim]\n")
+            
+            self.console.print("💬 [bold cyan]Enter Test Message[/bold cyan]")
+            self.console.print("   [dim]Enter the message you want to send[/dim]")
+            message = Prompt.ask("   [yellow]Message[/yellow]")
+        
+        # Validate message - must exist and not be empty after sanitization
+        if not message or not message.strip():
+            error_panel = Panel(
+                "[bold red]Message cannot be empty![/bold red]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            return
+        
+        # Show what will be sent (raw and sanitized) - FULL MESSAGE, NO TRUNCATION
+        sanitized_message = self.sanitize_sms(message)
+        sanitized_message = sanitized_message.strip()
+        
+        # Validate sanitized message is not empty
+        if not sanitized_message:
+            error_panel = Panel(
+                "[bold red]Message is empty after sanitization![/bold red]",
+                title="❌ Error",
+                border_style="red"
+            )
+            self.console.print(error_panel)
+            return
         self.console.print()
+        self.console.print("📋 [bold bright_cyan]Message Preview (Full Message):[/bold bright_cyan]")
+        self.console.print("─" * 75, style="bright_cyan")
+        
+        # Escape Rich markup to prevent rendering issues, but show FULL message
+        raw_display = str(message).replace('[', '\\[').replace(']', '\\]')
+        raw_preview = Panel(
+            f"[white]{raw_display}[/white]",
+            title="[bold yellow]Original Message (Before Sanitization)[/bold yellow]",
+            border_style="yellow",
+            box=box.ROUNDED,
+            expand=False
+        )
+        self.console.print(raw_preview)
+        self.console.print()
+        
+        if message != sanitized_message:
+            # Escape Rich markup in sanitized message too, show FULL message
+            sanitized_display = str(sanitized_message).replace('[', '\\[').replace(']', '\\]')
+            sanitized_preview = Panel(
+                f"[bright_green]{sanitized_display}[/bright_green]",
+                title="[bold bright_green]Sanitized Message (What Will Be Sent)[/bold bright_green]",
+                border_style="bright_green",
+                box=box.ROUNDED,
+                expand=False
+            )
+            self.console.print(sanitized_preview)
+            self.console.print()
+            self.console.print("[dim]ℹ️  Note: Newlines have been converted to %n for SMS compatibility[/dim]")
+            self.console.print()
+        
+        # Show final confirmation panel
         confirm_panel = Panel(
             f"[bold yellow]To:[/bold yellow] [bright_cyan]{normalized_phone}[/bright_cyan]\n"
-            f"[bold yellow]Message:[/bold yellow] [white]{message}[/white]",
-            title="[bold white]📋 Test SMS Details[/bold white]",
+            f"[bold yellow]Message Length:[/bold yellow] [white]{len(message)} characters[/white]\n"
+            f"[bold yellow]Sanitized Length:[/bold yellow] [white]{len(sanitized_message)} characters[/white]",
+            title="[bold white]📋 Test SMS Details - Ready to Send[/bold white]",
             border_style="yellow",
             box=box.DOUBLE
         )
@@ -239,10 +383,12 @@ class SMSSender:
             self.console.print("\n❌ [yellow]Test cancelled[/yellow]")
             return
         
-        # Send test SMS with progress indicator
+        # Send test SMS with progress indicator and 60-second timeout
         self.console.print()
-        with self.console.status("[bold yellow]🚀 Sending test SMS...[/bold yellow]", spinner="dots"):
-            success, result_message = self.try_send_text_sms(normalized_phone, message)
+        self.console.print("[dim]⏱️  Timeout set to 60 seconds - will stop automatically if error occurs[/dim]")
+        self.console.print()
+        with self.console.status("[bold yellow]🚀 Sending test SMS (60s timeout)...[/bold yellow]", spinner="dots"):
+            success, result_message = self.try_send_text_sms(normalized_phone, message, timeout=60)
         
         self.console.print()
         if success:
@@ -265,6 +411,13 @@ class SMSSender:
     
     def browse_excel_file(self) -> str:
         """Open file dialog to browse for Excel file"""
+        if not self.tkinter_available or filedialog is None:
+            # Fallback to manual path input if tkinter is not available
+            self.console.print("[yellow]⚠️  File dialog not available (tkinter not installed)[/yellow]")
+            self.console.print("[dim]Please enter the file path manually[/dim]\n")
+            file_path = Prompt.ask("[yellow]📁 Enter full path to Excel file[/yellow]")
+            return file_path.strip('"\'')
+        
         try:
             self.console.print("[dim]Opening file browser...[/dim]")
             file_path = filedialog.askopenfilename(
@@ -277,7 +430,10 @@ class SMSSender:
             return file_path
         except Exception as e:
             self.console.print(f"❌ [red]File dialog error: {str(e)}[/red]")
-            return ""
+            # Fallback to manual input
+            self.console.print("[yellow]Falling back to manual path input...[/yellow]\n")
+            file_path = Prompt.ask("[yellow]📁 Enter full path to Excel file[/yellow]")
+            return file_path.strip('"\'')
     
     def is_sms_direct_installed(self) -> bool:
         """Check if MyPhoneExplorer is installed"""
@@ -368,10 +524,23 @@ class SMSSender:
             return False
     
     def sanitize_sms(self, message: str) -> str:
-        """Sanitize SMS message - replace newlines with %n"""
+        """Sanitize SMS message - replace newlines with %n for SMS sending"""
         if not message:
             return ""
-        return message.replace('\n', '%n').replace('\r', '%n')
+        # Convert to string if not already
+        text = str(message)
+        # Handle various newline representations:
+        # 1. Standard newlines and carriage returns
+        text = text.replace('\r\n', '%n')  # Windows line endings first
+        text = text.replace('\r', '%n')     # Carriage returns
+        text = text.replace('\n', '%n')     # Line feeds
+        # 2. Handle literal string representations that might come from Excel
+        text = text.replace('_x000D_', '%n')  # Excel carriage return representation
+        text = text.replace('_x000A_', '%n')  # Excel line feed representation
+        # Remove any duplicate %n sequences (optional - keeps message cleaner)
+        while '%n%n' in text:
+            text = text.replace('%n%n', '%n')
+        return text
     
     def normalize_phone(self, phone: str) -> str:
         """Normalize phone number to Tanzanian format"""
@@ -391,6 +560,44 @@ class SMSSender:
             return cleaned_phone
         else:
             return "+255" + cleaned_phone[-9:]
+    
+    def is_valid_sms(self, phone_raw: str, message_raw: str) -> Tuple[bool, Optional[str], Optional[str]]:
+        """Check if SMS has both valid phone number and valid message
+        
+        Returns:
+            Tuple of (is_valid: bool, clean_phone: Optional[str], text_sms: Optional[str])
+            clean_phone and text_sms are None if invalid, otherwise contain normalized values
+        """
+        # Validate phone number - must normalize and be at least 12 characters
+        clean_phone = None
+        if phone_raw and phone_raw.strip():
+            normalized = self.normalize_phone(phone_raw)
+            if normalized and len(normalized) >= 12:  # Valid phone format
+                clean_phone = normalized
+        
+        # Validate message - must exist and not be empty after sanitization
+        text_sms = None
+        if message_raw:
+            sanitized = self.sanitize_sms(message_raw)
+            sanitized = sanitized.strip()
+            if sanitized:  # Not empty after sanitization
+                text_sms = sanitized
+        
+        # Both must be valid
+        is_valid = clean_phone is not None and text_sms is not None
+        return (is_valid, clean_phone, text_sms)
+    
+    def count_valid_sms(self, sheet, start_row: int, end_row: int) -> int:
+        """Count SMS records with both valid phone number and valid message"""
+        valid_count = 0
+        for i in range(start_row, end_row + 1):
+            phone_raw = str(sheet.cell(row=i, column=4).value or "")
+            message_raw = str(sheet.cell(row=i, column=3).value or "")
+            
+            is_valid, _, _ = self.is_valid_sms(phone_raw, message_raw)
+            if is_valid:
+                valid_count += 1
+        return valid_count
     
     def load_excel_preview(self) -> bool:
         """Load Excel file and show preview"""
@@ -465,13 +672,15 @@ class SMSSender:
                 workbook.close()
                 return False
             
-            total_messages = last_row - 1
+            total_rows = last_row - 1
+            valid_sms_count = self.count_valid_sms(sheet, 2, last_row)
             
             # Success header
             success_panel = Panel(
                 f"[bold bright_green]✅ Excel file loaded successfully![/bold bright_green]\n\n"
                 f"[yellow]File:[/yellow] [cyan]{os.path.basename(self.excel_path)}[/cyan]\n"
-                f"[yellow]Total Messages:[/yellow] [bright_green]{total_messages}[/bright_green]\n"
+                f"[yellow]Total Records:[/yellow] [bright_cyan]{total_rows}[/bright_cyan]\n"
+                f"[yellow]Valid SMS (Phone + Message):[/yellow] [bright_green]{valid_sms_count}[/bright_green]\n"
                 f"[yellow]Backup Created:[/yellow] [dim]{os.path.basename(backup_path)}[/dim]",
                 title="📊 File Information",
                 border_style="bright_green",
@@ -492,12 +701,13 @@ class SMSSender:
             self.console.print("═" * 75, style="bright_cyan")
             self.console.print()
             
-            # Create table with all columns
+            # Create table with all columns - show lines between rows for better readability
             preview_table = Table(
                 title="Raw Excel Data",
                 box=box.DOUBLE,
                 border_style="bright_blue",
-                show_header=True
+                show_header=True,
+                show_lines=True  # Add dividing lines between rows
             )
             
             # Add columns based on headers - no truncation, show full content
@@ -541,23 +751,29 @@ class SMSSender:
                 self.console.print(first_record_panel)
                 self.console.print()
                 
-                # Show raw message
+                # Show raw message - escape Rich markup to prevent rendering issues
+                # Replace any Rich markup characters that might be in the message
+                raw_display = str(first_message_raw).replace('[', '\\[').replace(']', '\\]')
                 raw_message_panel = Panel(
-                    f"[white]{first_message_raw}[/white]",
+                    f"[white]{raw_display}[/white]",
                     title="[bold yellow]📝 Raw SMS Message (Before Escaping)[/bold yellow]",
                     border_style="yellow",
-                    box=box.ROUNDED
+                    box=box.ROUNDED,
+                    expand=False
                 )
                 self.console.print(raw_message_panel)
                 self.console.print()
                 
-                # Show escaped message
+                # Show escaped message - this is what will be sent
                 escaped_message = self.sanitize_sms(first_message_raw)
+                # Escape Rich markup in escaped message too
+                escaped_display = str(escaped_message).replace('[', '\\[').replace(']', '\\]')
                 escaped_message_panel = Panel(
-                    f"[bright_green]{escaped_message}[/bright_green]",
+                    f"[bright_green]{escaped_display}[/bright_green]",
                     title="[bold bright_green]✨ Escaped SMS Message (After Sanitization)[/bold bright_green]",
                     border_style="bright_green",
-                    box=box.ROUNDED
+                    box=box.ROUNDED,
+                    expand=False
                 )
                 self.console.print(escaped_message_panel)
                 self.console.print()
@@ -580,24 +796,76 @@ class SMSSender:
                     self.console.print(no_changes_info)
                     self.console.print()
             
-            # Status summary
+            # Status summary - ONLY count status for valid SMS (both valid phone and valid message)
             status_counts = {}
             for i in range(2, last_row + 1):
-                status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
-                if status:
-                    status_counts[status] = status_counts.get(status, 0) + 1
-                else:
-                    status_counts['PENDING'] = status_counts.get('PENDING', 0) + 1
+                phone_raw = str(sheet.cell(row=i, column=4).value or "")
+                message_raw = str(sheet.cell(row=i, column=3).value or "")
+                
+                # Only count status if both phone and message are valid
+                is_valid, _, _ = self.is_valid_sms(phone_raw, message_raw)
+                if is_valid:
+                    status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
+                    if status:
+                        status_counts[status] = status_counts.get(status, 0) + 1
+                    else:
+                        status_counts['PENDING'] = status_counts.get('PENDING', 0) + 1
             
+            # Comprehensive Statistics Summary
+            self.console.print()
+            self.console.print("📊 [bold bright_cyan]Comprehensive Statistics Summary:[/bold bright_cyan]")
+            self.console.print("═" * 75, style="bright_cyan")
+            self.console.print()
+            
+            # Calculate detailed statistics
+            valid_phones = 0
+            invalid_phones = 0
+            valid_messages = 0
+            empty_messages = 0
+            
+            for i in range(2, last_row + 1):
+                phone_raw = str(sheet.cell(row=i, column=4).value or "")
+                message_raw = str(sheet.cell(row=i, column=3).value or "")
+                
+                if phone_raw and phone_raw.strip():
+                    normalized = self.normalize_phone(phone_raw)
+                    if normalized and len(normalized) >= 12:  # Valid phone format
+                        valid_phones += 1
+                    else:
+                        invalid_phones += 1
+                else:
+                    invalid_phones += 1
+                
+                if message_raw and message_raw.strip():
+                    valid_messages += 1
+                else:
+                    empty_messages += 1
+            
+            # Show file statistics panel
+            file_stats_panel = Panel(
+                f"[bold yellow]Total Records:[/bold yellow] [bright_cyan]{total_rows}[/bright_cyan]\n"
+                f"[bold yellow]Valid SMS (Phone + Message):[/bold yellow] [bright_green]{valid_sms_count}[/bright_green]\n"
+                f"[bold yellow]Valid Phone Numbers:[/bold yellow] [bright_green]{valid_phones}[/bright_green]\n"
+                f"[bold yellow]Invalid Phone Numbers:[/bold yellow] [red]{invalid_phones}[/red]\n"
+                f"[bold yellow]Valid Messages:[/bold yellow] [bright_green]{valid_messages}[/bright_green]\n"
+                f"[bold yellow]Empty Messages:[/bold yellow] [yellow]{empty_messages}[/yellow]",
+                title="[bold white]📈 File Statistics[/bold white]",
+                border_style="bright_cyan",
+                box=box.ROUNDED
+            )
+            self.console.print(file_stats_panel)
+            self.console.print()
+            
+            # Status summary table
             if status_counts:
-                # Create colored status table
+                # Create colored status table - print only once
                 table = Table(title="📈 Current Status Summary", box=box.DOUBLE, border_style="bright_yellow")
                 table.add_column("Status", style="bold", justify="left")
                 table.add_column("Count", style="bright_cyan", justify="right")
                 table.add_column("Percentage", style="bright_green", justify="right")
                 
                 for status, count in sorted(status_counts.items()):
-                    percentage = (count / total_messages) * 100
+                    percentage = (count / valid_sms_count) * 100 if valid_sms_count > 0 else 0
                     # Color code based on status
                     if status in ["OK", "SENT"]:
                         status_display = f"[bright_green]✅ {status}[/bright_green]"
@@ -611,6 +879,7 @@ class SMSSender:
                     table.add_row(status_display, str(count), f"{percentage:.1f}%")
                 
                 self.console.print(table)
+                self.console.print()  # Add spacing after table
             
             workbook.close()
             return True
@@ -626,10 +895,42 @@ class SMSSender:
             self.excel_path = ""
             return False
     
-    def try_send_text_sms(self, phone_number: str, text_sms: str) -> Tuple[bool, str]:
-        """Send SMS using MyPhoneExplorer and wait for completion"""
+    def try_send_text_sms(self, phone_number: str, text_sms: str, timeout: int = 30) -> Tuple[bool, str]:
+        """Send SMS using MyPhoneExplorer and wait for completion
+        
+        Args:
+            phone_number: Phone number to send SMS to
+            text_sms: SMS message text
+            timeout: Timeout in seconds (default 30, use 60 for test SMS)
+        
+        Returns:
+            Tuple of (success: bool, message: str)
+        """
         if not self.is_sms_direct_installed():
             return False, "MyPhoneExplorer not installed"
+        
+        start_time = time.time()
+        process = None
+        timeout_occurred = threading.Event()
+        
+        def kill_on_timeout():
+            """Forcefully kill process if timeout is exceeded"""
+            time.sleep(timeout)
+            if process and process.poll() is None:
+                timeout_occurred.set()
+                # Try to terminate gracefully first
+                try:
+                    process.terminate()
+                    process.wait(timeout=2)
+                except:
+                    pass
+                # Force kill if still running
+                if process.poll() is None:
+                    try:
+                        process.kill()
+                        process.wait()
+                    except:
+                        pass
         
         try:
             sanitized_message = self.sanitize_sms(text_sms)
@@ -637,16 +938,28 @@ class SMSSender:
             command = f'"{self.mpe_path}" {args}'
             creation_flags = 0 if self.show_window else subprocess.CREATE_NO_WINDOW
             
-            start_time = time.time()
-            
-            process = subprocess.run(
+            # Use Popen for better timeout control
+            process = subprocess.Popen(
                 command,
                 shell=True,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=30,
                 creationflags=creation_flags
             )
+            
+            # Start timeout monitor thread
+            timeout_thread = threading.Thread(target=kill_on_timeout, daemon=True)
+            timeout_thread.start()
+            
+            # Wait for process to complete
+            stdout, stderr = process.communicate()
+            returncode = process.returncode
+            
+            # Check if timeout occurred
+            if timeout_occurred.is_set():
+                elapsed = time.time() - start_time
+                return False, f"Timeout after {timeout}s (elapsed: {elapsed:.2f}s) - SMS sending took too long or encountered an error"
             
             execution_time = time.time() - start_time
             
@@ -656,19 +969,35 @@ class SMSSender:
             self.timing_stats['total_time'] += execution_time
             self.timing_stats['count'] += 1
             
-            # Wait random delay after sending
-            delay = random.randint(self.delay_min, self.delay_max)
-            time.sleep(delay)
+            # Wait random delay after sending (only for bulk sending, not test)
+            if timeout == 30:  # Bulk sending
+                delay = random.randint(self.delay_min, self.delay_max)
+                time.sleep(delay)
+                delay_info = f" (waited {delay}s)"
+            else:  # Test sending
+                delay_info = ""
             
-            if process.returncode == 0:
-                return True, f"Sent in {execution_time:.2f}s (waited {delay}s)"
+            if returncode == 0:
+                return True, f"Sent in {execution_time:.2f}s{delay_info}"
             else:
-                error_msg = process.stderr.strip() if process.stderr else "Unknown error"
-                return False, f"Failed in {execution_time:.2f}s: {error_msg} (waited {delay}s)"
+                error_msg = stderr.strip() if stderr else stdout.strip() if stdout else "Unknown error"
+                return False, f"Failed in {execution_time:.2f}s: {error_msg}{delay_info}"
                 
-        except subprocess.TimeoutExpired:
-            return False, "Timeout - SMS sending took too long"
         except Exception as e:
+            # Make sure to kill process if it's still running
+            if process and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=2)
+                except:
+                    try:
+                        process.kill()
+                        process.wait()
+                    except:
+                        pass
+            elapsed = time.time() - start_time
+            if timeout_occurred.is_set() or elapsed >= timeout:
+                return False, f"Timeout after {timeout}s (elapsed: {elapsed:.2f}s) - SMS sending took too long or encountered an error"
             return False, f"Error: {str(e)}"
     
     def send_sms_messages(self):
@@ -746,20 +1075,28 @@ class SMSSender:
                 return
             
             total_rows = last_row - 1
+            valid_sms_count = self.count_valid_sms(sheet, 2, last_row)
             
-            # Check for already sent messages
+            # Check for already sent messages (only count valid SMS)
             already_sent_count = 0
             pending_count = 0
             for i in range(2, last_row + 1):
-                status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
-                if status in ["OK", "SENT"]:
-                    already_sent_count += 1
-                else:
-                    pending_count += 1
+                phone_raw = str(sheet.cell(row=i, column=4).value or "")
+                message_raw = str(sheet.cell(row=i, column=3).value or "")
+                
+                # Only count if both phone and message are valid
+                is_valid, _, _ = self.is_valid_sms(phone_raw, message_raw)
+                if is_valid:
+                    status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
+                    if status in ["OK", "SENT"]:
+                        already_sent_count += 1
+                    else:
+                        pending_count += 1
             
             # Show summary
             summary_panel = Panel(
-                f"[bold yellow]Total Messages:[/bold yellow] [bright_cyan]{total_rows}[/bright_cyan]\n"
+                f"[bold yellow]Total Records:[/bold yellow] [bright_cyan]{total_rows}[/bright_cyan]\n"
+                f"[bold yellow]Valid SMS (Phone + Message):[/bold yellow] [bright_green]{valid_sms_count}[/bright_green]\n"
                 f"[bold yellow]Already Sent:[/bold yellow] [bright_green]{already_sent_count}[/bright_green]\n"
                 f"[bold yellow]Pending:[/bold yellow] [bright_yellow]{pending_count}[/bright_yellow]",
                 title="📊 Summary",
@@ -804,7 +1141,7 @@ class SMSSender:
                     self.console.print("\n⚠️  [yellow]Invalid range, keeping current settings[/yellow]\n")
             
             # Final confirmation with all details
-            messages_to_send = total_rows if resend_all else pending_count
+            messages_to_send = valid_sms_count if resend_all else pending_count
             estimated_min_time = messages_to_send * self.delay_min / 60
             estimated_max_time = messages_to_send * self.delay_max / 60
             
@@ -838,7 +1175,7 @@ class SMSSender:
             }
             
             self.stats = {
-                'total': total_rows,
+                'total': valid_sms_count,
                 'success': 0,
                 'failed': 0,
                 'skipped': 0,
@@ -875,12 +1212,14 @@ class SMSSender:
                 console=self.console
             ) as progress:
                 
-                task = progress.add_task("[bold bright_cyan]Sending SMS...", total=total_rows)
+                task = progress.add_task("[bold bright_cyan]Sending SMS...", total=valid_sms_count)
                 processed_count = 0
+                valid_processed_count = 0
+                invalid_count = 0
                 
                 for i in range(2, last_row + 1):
                     if self.should_cancel:
-                        remaining = total_rows - processed_count
+                        remaining = valid_sms_count - valid_processed_count
                         self.stats['cancelled'] = remaining
                         break
                     
@@ -889,21 +1228,23 @@ class SMSSender:
                     message_raw = str(sheet.cell(row=i, column=3).value or "")
                     current_status = str(sheet.cell(row=i, column=5).value or "").strip().upper()
                     
-                    clean_phone = self.normalize_phone(phone_raw)
-                    text_sms = self.sanitize_sms(message_raw).strip()
-                    
                     status_cell = sheet.cell(row=i, column=5)
                     detail_cell = sheet.cell(row=i, column=6)
                     
-                    # Skip already sent messages unless resend_all is True
-                    if not resend_all and current_status in ["OK", "SENT"]:
-                        self.stats['skipped'] += 1
-                        progress.console.print(f"[dim]⏭️  {student_name}: Already sent - skipping[/dim]")
-                        processed_count += 1
-                        progress.update(task, advance=1)
-                        continue
+                    # Validate SMS - must have both valid phone and valid message
+                    is_valid, clean_phone, text_sms = self.is_valid_sms(phone_raw, message_raw)
                     
-                    if clean_phone and text_sms:
+                    # Only process valid SMS (both phone and message valid)
+                    if is_valid:
+                        valid_processed_count += 1
+                        
+                        # Skip already sent messages unless resend_all is True
+                        if not resend_all and current_status in ["OK", "SENT"]:
+                            self.stats['skipped'] += 1
+                            progress.console.print(f"[dim]⏭️  {student_name}: Already sent - skipping[/dim]")
+                            progress.update(task, advance=1)
+                            continue
+                        
                         progress.console.print(f"[bold yellow]📤 Sending to {student_name}...[/bold yellow]")
                         
                         send_result, status_message = self.try_send_text_sms(clean_phone, text_sms)
@@ -928,15 +1269,21 @@ class SMSSender:
                             'status': 'OK' if send_result else 'PENDING',
                             'message': status_message
                         })
+                        
+                        progress.update(task, advance=1)
                     else:
+                        # Invalid SMS - mark but don't count in progress (silently skip to avoid spam)
                         status_cell.value = "INVALID"
                         status_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
                         detail_cell.value = "Invalid phone or message"
-                        self.stats['skipped'] += 1
-                        progress.console.print(f"[yellow]⚠️  {student_name}: Skipped - invalid data[/yellow]")
+                        invalid_count += 1
+                        # Only show invalid message summary at the end, not for each one
                     
                     processed_count += 1
-                    progress.update(task, advance=1)
+                
+                # Show summary of invalid records if any
+                if invalid_count > 0:
+                    progress.console.print(f"[dim]⚠️  Skipped {invalid_count} invalid records (missing phone or message)[/dim]")
                 
                 # Update end time
                 self.timing_stats['end_time'] = datetime.now()
@@ -1112,12 +1459,12 @@ class SMSSender:
                 for row in range(2, sheet.max_row + 1):
                     if sheet.cell(row=row, column=4).value:
                         last_row = row
-                total_messages = last_row - 1
+                valid_sms_count = self.count_valid_sms(sheet, 2, last_row)
                 workbook.close()
                 table.add_row(
                     "Excel File",
                     "[bright_green]✅ Loaded[/bright_green]",
-                    f"{total_messages} messages ready"
+                    f"{valid_sms_count} valid SMS ready"
                 )
             except:
                 table.add_row(

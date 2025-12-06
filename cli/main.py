@@ -28,7 +28,7 @@ from .primary.process import ExamProcessor as PrimaryProcessor
 from . import testing
 from .time_travel import TimeTravelProcessor
 
-from .bulk import BulkSMSSender
+from .sms import SMSSender
 
 app = typer.Typer(
     name="kiyabo",
@@ -326,25 +326,25 @@ def future_from_antique(
 
 @app.command("sendsms")
 def bulk_sms(
-    level: str = typer.Argument(..., help="School level"),
-    excel_path: str = typer.Option(..., "--excel", "-e", help="Path to Excel file with SMS data"),
-    mpe_exe_path: str = typer.Option(r"C:\Program Files (x86)\MyPhoneExplorer\MyPhoneExplorer.exe", "--mpe", "-m", help="Path to MyPhoneExplorer.exe"),
-    mode: str = typer.Option("direct", "--mode", "-M", help="Sending mode: 'direct' for one-by-one, 'batch' for XML batches"),
-    batch_size: int = typer.Option(1, "--batch-size", "-b", help="Batch size for 'batch' mode"),
-    min_sleep: int = typer.Option(10, "--min-sleep","-min", help="Minimum sleep time between messages (seconds)"),
-    max_sleep: int = typer.Option(20, "--max-sleep", "-max", help="Maximum sleep time between messages (seconds)"),
+    level: Level = typer.Argument(..., help="School level"),
+    excel_path: str = typer.Option(None, "--excel", "-e", help="Path to Excel file with SMS data (optional - can be loaded from menu)"),
+    delay_min: int = typer.Option(5, "--delay-min", "-min", help="Minimum delay between messages (seconds)"),
+    delay_max: int = typer.Option(10, "--delay-max", "-max", help="Maximum delay between messages (seconds)"),
+    show_window: bool = typer.Option(False, "--show-window", "-w", help="Show MyPhoneExplorer window during sending"),
+    test_mode: bool = typer.Option(False, "--test", "-t", help="Enable test mode"),
+    
 ):
-    """Send bulk SMS using MyPhoneExplorer"""
+    """Interactive SMS Sending System using MyPhoneExplorer - Shows menu for full control"""
     print_banner()
     try:
-        sender = BulkSMSSender(
-            excel_path=excel_path,
-            mpe_exe_path=mpe_exe_path,
-            mode=mode,
-            batch_size=batch_size,
-            min_sleep=min_sleep,
-            max_sleep=max_sleep
+        sender = SMSSender(
+            excel_path=excel_path or "",
+            delay_min=delay_min,
+            delay_max=delay_max,
+            show_window=show_window,
+            test_mode=test_mode
         )
+        # Show interactive menu
         sender.run()
     except Exception as e:
         console.print(f"[red]ERROR:[/] {e}")
