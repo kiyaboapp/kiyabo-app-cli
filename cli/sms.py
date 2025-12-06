@@ -480,29 +480,105 @@ class SMSSender:
             self.console.print(success_panel)
             self.console.print()
             
-            # Preview messages
-            self.console.print("👥 [bold bright_cyan]Preview of First 3 Messages:[/bold bright_cyan]")
-            self.console.print("═" * 75, style="bright_cyan")
+            # Get header row (row 1) to determine column names
+            headers = []
+            max_col = sheet.max_column
+            for col in range(1, max_col + 1):
+                header_value = str(sheet.cell(row=1, column=col).value or f"Column {col}").strip()
+                headers.append(header_value)
             
-            for i in range(2, min(5, last_row + 1)):
-                student = str(sheet.cell(row=i, column=2).value or "").strip()
-                phone = str(sheet.cell(row=i, column=4).value or "")
-                message = str(sheet.cell(row=i, column=3).value or "")
-                status = str(sheet.cell(row=i, column=5).value or "").strip()
+            # Show Excel data preview in table format (5 records)
+            self.console.print("📋 [bold bright_cyan]Excel Data Preview (First 5 Records):[/bold bright_cyan]")
+            self.console.print("═" * 75, style="bright_cyan")
+            self.console.print()
+            
+            # Create table with all columns
+            preview_table = Table(
+                title="Raw Excel Data",
+                box=box.DOUBLE,
+                border_style="bright_blue",
+                show_header=True
+            )
+            
+            # Add columns based on headers - no truncation, show full content
+            for header in headers:
+                preview_table.add_column(header, style="white", overflow="fold", no_wrap=False)
+            
+            # Add 5 rows of data - show full content without truncation
+            for i in range(2, min(7, last_row + 1)):
+                row_data = []
+                for col in range(1, max_col + 1):
+                    cell_value = str(sheet.cell(row=i, column=col).value or "").strip()
+                    # Show full content - no truncation
+                    row_data.append(cell_value)
+                preview_table.add_row(*row_data)
+            
+            self.console.print(preview_table)
+            self.console.print()
+            
+            # Show SMS message for first record (raw and escaped)
+            if last_row >= 2:
+                first_student = str(sheet.cell(row=2, column=2).value or "").strip()
+                first_phone = str(sheet.cell(row=2, column=4).value or "")
+                first_message_raw = str(sheet.cell(row=2, column=3).value or "")
+                first_status = str(sheet.cell(row=2, column=5).value or "").strip()
                 
-                normalized_phone = self.normalize_phone(phone)
+                normalized_phone = self.normalize_phone(first_phone)
                 
-                # Create colorful preview panel for each message
-                message_panel = Panel(
-                    f"[bold yellow]Student:[/bold yellow] [white]{student}[/white]\n"
-                    f"[bold yellow]Phone:[/bold yellow] [cyan]{phone}[/cyan] → [bright_green]{normalized_phone}[/bright_green]\n"
-                    f"[bold yellow]Status:[/bold yellow] [magenta]{status if status else 'PENDING'}[/magenta]\n"
-                    f"[bold yellow]Message:[/bold yellow]\n[dim]{message}[/dim]",
-                    title=f"[bold white]#{i-1}[/bold white]",
-                    border_style="bright_blue"
-                )
-                self.console.print(message_panel)
+                self.console.print("💬 [bold bright_magenta]First Record SMS Message Preview:[/bold bright_magenta]")
+                self.console.print("═" * 75, style="bright_magenta")
                 self.console.print()
+                
+                # Show first record details
+                first_record_panel = Panel(
+                    f"[bold yellow]Student:[/bold yellow] [white]{first_student}[/white]\n"
+                    f"[bold yellow]Phone:[/bold yellow] [cyan]{first_phone}[/cyan] → [bright_green]{normalized_phone}[/bright_green]\n"
+                    f"[bold yellow]Status:[/bold yellow] [magenta]{first_status if first_status else 'PENDING'}[/magenta]",
+                    title="[bold white]Record #1 Details[/bold white]",
+                    border_style="bright_cyan",
+                    box=box.ROUNDED
+                )
+                self.console.print(first_record_panel)
+                self.console.print()
+                
+                # Show raw message
+                raw_message_panel = Panel(
+                    f"[white]{first_message_raw}[/white]",
+                    title="[bold yellow]📝 Raw SMS Message (Before Escaping)[/bold yellow]",
+                    border_style="yellow",
+                    box=box.ROUNDED
+                )
+                self.console.print(raw_message_panel)
+                self.console.print()
+                
+                # Show escaped message
+                escaped_message = self.sanitize_sms(first_message_raw)
+                escaped_message_panel = Panel(
+                    f"[bright_green]{escaped_message}[/bright_green]",
+                    title="[bold bright_green]✨ Escaped SMS Message (After Sanitization)[/bold bright_green]",
+                    border_style="bright_green",
+                    box=box.ROUNDED
+                )
+                self.console.print(escaped_message_panel)
+                self.console.print()
+                
+                # Show what was changed
+                if first_message_raw != escaped_message:
+                    changes_info = Panel(
+                        "[dim]Note: Newlines (\\n) and carriage returns (\\r) have been replaced with %n[/dim]",
+                        border_style="dim",
+                        box=box.SIMPLE
+                    )
+                    self.console.print(changes_info)
+                    self.console.print()
+                else:
+                    no_changes_info = Panel(
+                        "[dim]No non-printable characters found - message is ready to send[/dim]",
+                        border_style="dim",
+                        box=box.SIMPLE
+                    )
+                    self.console.print(no_changes_info)
+                    self.console.print()
             
             # Status summary
             status_counts = {}

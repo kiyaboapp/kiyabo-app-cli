@@ -192,10 +192,10 @@ class PrimaryPupilImporter:
 
                     section_id = CLASS_ID + section[-1].upper() if section else None
 
-                    # 1. Academic Info
+                    # 1. Academic Info (section_id moved to enrollment table)
                     pupil_records.append((
                         pupil_id, first.replace("''", "'"), middle.replace("''", "'"), surname.replace("''", "'"),
-                        sex, inactive, section_id, prem_no
+                        sex, inactive, prem_no
                     ))
 
                     # 2. Admission
@@ -263,8 +263,8 @@ class PrimaryPupilImporter:
                 with tqdm(total=len(pupil_records), desc="Inserting Academic Info", unit="rec") as pbar:
                     for i in range(0, len(pupil_records), batch_size):
                         cur.executemany("""INSERT INTO [tbl_pupil_academic_info]
-                            (pupil_id, first_name, middle_name, surname, sex, inactive, section_id, prem_no)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", pupil_records[i:i+batch_size])
+                            (pupil_id, first_name, middle_name, surname, sex, inactive, prem_no)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)""", pupil_records[i:i+batch_size])
                         conn.commit()
                         pbar.update(len(pupil_records[i:i+batch_size]))
 
@@ -301,7 +301,7 @@ class PrimaryPupilImporter:
                 print("\n")
                 with tqdm(total=len(enrollment_records), desc="Inserting Enrollment Records", unit="rec") as pbar:
                     for i in range(0, len(enrollment_records), batch_size):
-                        cur.executemany("""INSERT INTO [tbl_pupil_enrollements]
+                        cur.executemany("""INSERT INTO [tbl_pupil_enrollments]
                             (pupil_id, class_id, section_id, academic_year) VALUES (?, ?, ?, ?)""",
                             enrollment_records[i:i+batch_size])
                         conn.commit()

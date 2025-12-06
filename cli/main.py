@@ -41,7 +41,14 @@ Level = Literal["primary", "olevel", "alevel"]
 @app.command()
 def test(level: Level = typer.Argument(..., help="School level")):
     print_banner()
-    testing.main()
+    try:
+        testing.main()
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 @app.command()
 def upload(
@@ -53,31 +60,38 @@ def upload(
     sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)")
 ):
     print_banner()
-    print(f"Uploading {level} data for exam ID {exam_id} from {excel_path} to {db_path} process_after={process_after}")
-    if level == "alevel":
-        importer = ExamDataImporter()
-        success = importer.import_exam_data(exam_id, excel_path, db_path)
-        console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
-        if success and process_after:
-            processor = AlevelProcessor(exam_id=exam_id, 
-                        db_path=db_path, sort_columns=[col.strip() for col in sort_columns.split(",")] if sort_columns else None,
-                        )
-            processor.run()
-            console.print("[green]PROCESSING COMPLETE[/]")
-    
-    elif level == "olevel":
-        importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path,force_import=True,process_after=process_after)
-        importer.run()
-        console.print("[green]UPLOAD COMPLETE[/]")
-    
-    elif level == "primary":
-        importer=PrimaryResultImporter(db_path=db_path,excel_path=excel_path,exam_id=exam_id)
-        success=importer.run()
-        if success and process_after:
-            processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
-            processor.complete_exam()
-    else:
-        console.print(f"[yellow]upload not implemented for {level}[/]")
+    try:
+        print(f"Uploading {level} data for exam ID {exam_id} from {excel_path} to {db_path} process_after={process_after}")
+        if level == "alevel":
+            importer = ExamDataImporter()
+            success = importer.import_exam_data(exam_id, excel_path, db_path)
+            console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
+            if success and process_after:
+                processor = AlevelProcessor(exam_id=exam_id, 
+                            db_path=db_path, sort_columns=[col.strip() for col in sort_columns.split(",")] if sort_columns else None,
+                            )
+                processor.run()
+                console.print("[green]PROCESSING COMPLETE[/]")
+        
+        elif level == "olevel":
+            importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path,force_import=True,process_after=process_after)
+            importer.run()
+            console.print("[green]UPLOAD COMPLETE[/]")
+        
+        elif level == "primary":
+            importer=PrimaryResultImporter(db_path=db_path,excel_path=excel_path,exam_id=exam_id)
+            success=importer.run()
+            if success and process_after:
+                processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
+                processor.complete_exam()
+        else:
+            console.print(f"[yellow]upload not implemented for {level}[/]")
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 
@@ -90,24 +104,31 @@ def import_(
     save_folder: str = typer.Option(r"C:\Kiyabo App\admission", "--save-folder", "-s", help="Folder to save processed files"),
     academic_year: int = typer.Option(None, "--academic-year", "-y", help="Academic year (defaults to current year if not specified)"),
 ):
-    level=level.lower()
-    class_id=class_id.upper()
-    print_banner()
+    try:
+        level=level.lower()
+        class_id=class_id.upper()
+        print_banner()
 
-    if level=="olevel":
-        importer=OlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
-        importer.run()
+        if level=="olevel":
+            importer=OlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
+            importer.run()
 
-    elif level=="alevel":
-        importer=AlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
-        importer.run()
+        elif level=="alevel":
+            importer=AlevelStudentImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id)
+            importer.run()
 
-    elif level=="primary":
-        importer=PrimaryPupilImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id,academic_year=academic_year)
-        importer.run()
-        
-    else:
-        console.print(f"[yellow]import not implemented for {level}[/]")
+        elif level=="primary":
+            importer=PrimaryPupilImporter(excel_path=excel_path,db_path=db_path,save_folder=save_folder,class_id=class_id,academic_year=academic_year)
+            importer.run()
+            
+        else:
+            console.print(f"[yellow]import not implemented for {level}[/]")
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 
@@ -125,23 +146,30 @@ def export(
     orientation: str = typer.Option(None, "--orientation"),
 ):
     print_banner()
-    level = level.lower()
+    try:
+        level = level.lower()
 
-    if level == "alevel":
-        exporter=StudentExamExporter(
-            exam_id=exam_id,
-            db_path=db_path,
-            include_comb_sheets=include_comb,
-            order_by=order_by,
-            top_n=top_n,
-            bottom_n=bottom_n,
-            paper_size=paper_size,
-            orientation=orientation,
-        )
-        exporter.run()
-        console.print("[green]EXPORT STARTED → C:\\Kiyabo App\\Results[/]")
-    else:
-        console.print(f"[yellow]export not implemented for {level}[/]")
+        if level == "alevel":
+            exporter=StudentExamExporter(
+                exam_id=exam_id,
+                db_path=db_path,
+                include_comb_sheets=include_comb,
+                order_by=order_by,
+                top_n=top_n,
+                bottom_n=bottom_n,
+                paper_size=paper_size,
+                orientation=orientation,
+            )
+            exporter.run()
+            console.print("[green]EXPORT STARTED → C:\\Kiyabo App\\Results[/]")
+        else:
+            console.print(f"[yellow]export not implemented for {level}[/]")
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 @app.command()
 def process(
@@ -189,6 +217,10 @@ def process(
 
     except Exception as e:
         console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
@@ -201,53 +233,74 @@ def main(ctx: typer.Context):
 def run(file_path: str, args: List[str] = typer.Argument(None)):
     """Run a Python script with arguments"""
     print_banner()
-    script_path = Path(file_path)
-    if not script_path.exists():
-        typer.echo(f"Error: File {file_path} not found")
-        raise typer.Exit(1)
-    
-    # Build command: python script.py [args...]
-    command = [sys.executable, str(script_path)]
-    if args:
-        command.extend(args)
-    
     try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"Script execution failed with exit code {e.returncode}")
-        raise typer.Exit(e.returncode)
+        script_path = Path(file_path)
+        if not script_path.exists():
+            console.print(f"[red]ERROR:[/] File {file_path} not found")
+            raise typer.Exit(1)
+        
+        # Build command: python script.py [args...]
+        command = [sys.executable, str(script_path)]
+        if args:
+            command.extend(args)
+        
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]ERROR:[/] Script execution failed with exit code {e.returncode}")
+            raise typer.Exit(e.returncode)
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def python(args: List[str] = typer.Argument(None)):
     """Run Python commands (pip, python -m, etc.)"""
     print_banner()
-    if not args:
-        # Start interactive Python if no args
-        subprocess.run([sys.executable])
-    else:
-        command = [sys.executable] + args
-        try:
-            subprocess.run(command, check=True)
-        except subprocess.CalledProcessError as e:
-            typer.echo(f"Command failed with exit code {e.returncode}")
-            raise typer.Exit(e.returncode)
+    try:
+        if not args:
+            # Start interactive Python if no args
+            subprocess.run([sys.executable])
+        else:
+            command = [sys.executable] + args
+            try:
+                subprocess.run(command, check=True)
+            except subprocess.CalledProcessError as e:
+                console.print(f"[red]ERROR:[/] Command failed with exit code {e.returncode}")
+                raise typer.Exit(e.returncode)
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def pip(args: List[str] = typer.Argument(None)):
     """Run pip commands"""
     print_banner()
-    if not args:
-        typer.echo("Please specify pip command (install, list, etc.)")
-        return
-    
-    command = [sys.executable, "-m", "pip"] + args
     try:
-        subprocess.run(command, check=True)
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"pip command failed with exit code {e.returncode}")
-        raise typer.Exit(e.returncode)
+        if not args:
+            console.print("[yellow]Please specify pip command (install, list, etc.)[/yellow]")
+            return
+        
+        command = [sys.executable, "-m", "pip"] + args
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]ERROR:[/] pip command failed with exit code {e.returncode}")
+            raise typer.Exit(e.returncode)
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 @app.command(name='future')
@@ -265,6 +318,10 @@ def future_from_antique(
         space_ship.into_the_future()
     except Exception as e:
         console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 @app.command("sendsms")
@@ -279,15 +336,22 @@ def bulk_sms(
 ):
     """Send bulk SMS using MyPhoneExplorer"""
     print_banner()
-    sender = BulkSMSSender(
-        excel_path=excel_path,
-        mpe_exe_path=mpe_exe_path,
-        mode=mode,
-        batch_size=batch_size,
-        min_sleep=min_sleep,
-        max_sleep=max_sleep
-    )
-    sender.run()
+    try:
+        sender = BulkSMSSender(
+            excel_path=excel_path,
+            mpe_exe_path=mpe_exe_path,
+            mode=mode,
+            batch_size=batch_size,
+            min_sleep=min_sleep,
+            max_sleep=max_sleep
+        )
+        sender.run()
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
 
 
 
@@ -314,44 +378,51 @@ def combine(
     Combine two exams and save results as Access query.
     """
     print_banner()
-    level=level.lower()
+    try:
+        level=level.lower()
 
-    if sort_columns:
-        sort_columns_list = [col.strip() for col in sort_columns.split(",")]
-    else:
-        sort_columns_list = None
+        if sort_columns:
+            sort_columns_list = [col.strip() for col in sort_columns.split(",")]
+        else:
+            sort_columns_list = None
 
-    if level=="olevel":
-        processor = DualOlevelProcessor(
-            exam_id_1=e1,
-            exam_id_2=e2,
-            exam_name_1=exam_name_1,
-            exam_name_2=exam_name_2,
-            db_path=db,
-            query_name=query_name,
-            base_subjects=base_subjects,
-            flat_rate=flat_rate,
-            include_inc=include_inc,
-            ranking_method=ranking_method,
-            necta_decimal_places=necta_decimal_places,
-            sort_columns=sort_columns_list
-        )
-        processor.run() 
-    
-    elif level=="alevel":
-        processor = DualAlevelProcessor(
-            exam_id_1=e1,
-            exam_id_2=e2,
-            exam_name_1=exam_name_1,
-            exam_name_2=exam_name_2,
-            db_path=db,
-            sort_columns=sort_columns_list,
-            include_inc=include_inc,
-            rank_method=ranking_method,
-        )
-        processor.run()
-    else:
-        console.print(f"[yellow]combine not implemented for {level}[/]")
+        if level=="olevel":
+            processor = DualOlevelProcessor(
+                exam_id_1=e1,
+                exam_id_2=e2,
+                exam_name_1=exam_name_1,
+                exam_name_2=exam_name_2,
+                db_path=db,
+                query_name=query_name,
+                base_subjects=base_subjects,
+                flat_rate=flat_rate,
+                include_inc=include_inc,
+                ranking_method=ranking_method,
+                necta_decimal_places=necta_decimal_places,
+                sort_columns=sort_columns_list
+            )
+            processor.run() 
+        
+        elif level=="alevel":
+            processor = DualAlevelProcessor(
+                exam_id_1=e1,
+                exam_id_2=e2,
+                exam_name_1=exam_name_1,
+                exam_name_2=exam_name_2,
+                db_path=db,
+                sort_columns=sort_columns_list,
+                include_inc=include_inc,
+                rank_method=ranking_method,
+            )
+            processor.run()
+        else:
+            console.print(f"[yellow]combine not implemented for {level}[/]")
+    except Exception as e:
+        console.print(f"[red]ERROR:[/] {e}")
+        import traceback
+        console.print(f"[red]Traceback:[/]")
+        console.print(traceback.format_exc())
+        raise typer.Exit(1)
     
 
 if __name__ == "__main__":
