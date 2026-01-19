@@ -54,6 +54,26 @@ class PrimaryPupilImporter:
         return num
 
     @staticmethod
+    def get_roman_class_number(class_id: str) -> str:
+        """
+        Convert class ID string to Roman numeral equivalent
+        """
+        class_mapping = {
+            "BABY": "I",
+            "MIDDLE": "II",
+            "PRE-UNIT": "III",
+            "GRADE 1": "I",
+            "GRADE 2": "II",
+            "GRADE 3": "III",
+            "GRADE 4": "IV",
+            "GRADE 5": "V",
+            "GRADE 6": "VI",
+            "GRADE 7": "VI"
+        }
+        
+        return class_mapping.get(class_id.upper(), "X")
+
+    @staticmethod
     def get_check_digit(pseudo: str) -> str:
         total = 0
         for i, ch in enumerate(reversed(pseudo)):
@@ -190,7 +210,8 @@ class PrimaryPupilImporter:
                     ws.cell(row=row_offset, column=21).value = pupil_id
                     for c in range(2, 10): ws.cell(row=row_offset, column=c).fill = self.GREEN_FILL
 
-                    section_id = CLASS_ID + section[-1].upper() if section else None
+                    roman_class_number = self.get_roman_class_number(CLASS_ID)
+                    section_id = roman_class_number + section[-1].upper() if section else None
 
                     # 1. Academic Info (section_id moved to enrollment table)
                     pupil_records.append((

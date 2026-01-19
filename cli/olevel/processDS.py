@@ -76,7 +76,7 @@ class OlevelProcessor:
 
         # Build sort directions dynamically based on column semantics
         self.ascending = self._build_sort_directions(sort_columns)
-
+        
         # Database connections and dataframes
         self.conn = None
         self.cursor = None

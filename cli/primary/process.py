@@ -248,11 +248,26 @@ class ExamProcessor:
             """
             df = pd.read_sql(query, conn, params=(self.exam_id,))
        
-        student_query = """
-        SELECT pupil_id, first_name, middle_name, surname, sex, section_id
-        FROM tbl_pupil_academic_info
-        """
-        students_df = pd.read_sql(student_query, conn)
+        try:
+            student_query = """
+            SELECT pupil_id, first_name, middle_name, surname, sex, section_id
+            FROM tbl_pupil_academic_info
+            """
+            students_df = pd.read_sql(student_query, conn)
+        except Exception as e:
+            console.print(f"[red]ERROR:[/] Failed to load student data from tbl_pupil_academic_info: {str(e)}")
+            console.print("[yellow]INFO:[/] Attempting to continue without student demographic data...")
+            
+            # Create an empty students DataFrame with the expected columns
+            students_df = pd.DataFrame(columns=['pupil_id', 'first_name', 'middle_name', 'surname', 'sex', 'section_id'])
+            
+            # Get pupil_ids from the exam results to populate minimal data
+            exam_pupil_ids = df[['pupil_id']].drop_duplicates()
+            students_df = exam_pupil_ids.copy()
+            for col in ['first_name', 'middle_name', 'surname', 'sex', 'section_id']:
+                students_df[col] = ''  # Fill with empty strings
+            
+            console.print("[green]CONTINUING:[/] Proceeding with exam processing using minimal student data")
        
         conn.close()
        
@@ -1123,68 +1138,76 @@ class ExamProcessor:
    
     def complete_exam(self):
         """Complete all exam processing steps"""
-        # Load results
-        console.print("\n[cyan]📂 Loading exam results from database...[/cyan]")
-        df = self._load_results()
-        console.print(f"[green]✓[/green] Loaded [bold]{len(df)}[/bold] student records\n")
-       
-        # Display data preview
-        self._display_data_preview(df)
-       
-        # Step 1: Basic details
-        df = self.assign_basic_details(df)
-       
-        # Step 2: Student positions
-        df = self.assign_student_positions(df)
-       
-        # Step 3: Subject positions
-        df = self.assign_subject_positions(df)
-       
-        # Step 4: Create JSON
-        console.print("="*80)
-        console.print("[bold white]STEP 4: GENERATING RESULT JSON[/bold white]")
-        console.print("="*80 + "\n")
-       
-        from tqdm import tqdm
-        tqdm.pandas(desc="Creating JSON", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]", colour="magenta")
-       
-        df['result_json'] = df.progress_apply(
-            lambda row: self.create_result_json(row),
-            axis=1
-        )
-       
-        console.print("\n[green]JSON records generated![/green]\n")
-       
-        # Step 4.5: Generate NECTA results string
-        console.print("="*80)
-        console.print("[bold white]STEP 4.5: GENERATING NECTA RESULTS STRING[/bold white]")
-        console.print("="*80 + "\n")
-       
-        from tqdm import tqdm
-        tqdm.pandas(desc="Generating NECTA format", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]", colour="magenta")
-       
-        df['necta_results'] = df.progress_apply(self.create_necta_results, axis=1)
-       
-        console.print("[green]NECTA strings generated perfectly![/green]\n")
-       
-        # Show one sample
-        sample = df.iloc[0]
-        console.print(f"[cyan]Sample →[/cyan] {sample['necta_results']}\n")
-       
-        # Step 5: Save to database
-        # The subject count should be null in DB so that when auto calculate average doesnt get devide by 0 error
-        self.save_results(df)
-        self.update_to_nulls()
-       
-        # Display final summary
-        self._display_final_summary(df)
-       
-        # Step 6: Calculate and save competency
-        self.calculate_and_save_competency(df)
-       
-        console.print("[bold green]🎉 EXAM PROCESSING COMPLETED SUCCESSFULLY! 🎉[/bold green]\n")
-       
-        return df
+        try:
+            # Load results
+            console.print("\n[cyan]📂 Loading exam results from database...[/cyan]")
+            df = self._load_results()
+            console.print(f"[green]✓[/green] Loaded [bold]{len(df)}[/bold] student records\n")
+                
+            # Display data preview
+            self._display_data_preview(df)
+                
+            # Step 1: Basic details
+            df = self.assign_basic_details(df)
+                
+            # Step 2: Student positions
+            df = self.assign_student_positions(df)
+                
+            # Step 3: Subject positions
+            df = self.assign_subject_positions(df)
+                
+            # Step 4: Create JSON
+            console.print("="*80)
+            console.print("[bold white]STEP 4: GENERATING RESULT JSON[/bold white]")
+            console.print("="*80 + "\n")
+                
+            from tqdm import tqdm
+            tqdm.pandas(desc="Creating JSON", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]", colour="magenta")
+                
+            df['result_json'] = df.progress_apply(
+                lambda row: self.create_result_json(row),
+                axis=1
+            )
+                
+            console.print("\n[green]JSON records generated![/green]\n")
+                
+            # Step 4.5: Generate NECTA results string
+            console.print("="*80)
+            console.print("[bold white]STEP 4.5: GENERATING NECTA RESULTS STRING[/bold white]")
+            console.print("="*80 + "\n")
+                
+            from tqdm import tqdm
+            tqdm.pandas(desc="Generating NECTA format", bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]", colour="magenta")
+                
+            df['necta_results'] = df.progress_apply(self.create_necta_results, axis=1)
+                
+            console.print("[green]NECTA strings generated perfectly![/green]\n")
+                
+            # Show one sample
+            sample = df.iloc[0]
+            console.print(f"[cyan]Sample →[/cyan] {sample['necta_results']}\n")
+                
+            # Step 5: Save to database
+            # The subject count should be null in DB so that when auto calculate average doesnt get devide by 0 error
+            self.save_results(df)
+            self.update_to_nulls()
+                
+            # Display final summary
+            self._display_final_summary(df)
+                
+            # Step 6: Calculate and save competency
+            self.calculate_and_save_competency(df)
+                
+            console.print("[bold green]🎉 EXAM PROCESSING COMPLETED SUCCESSFULLY! 🎉[/bold green]\n")
+                
+            return df
+        except Exception as e:
+            console.print(f"\n[red]❌ CRITICAL ERROR:[/] {str(e)}")
+            console.print("\n[yellow]⚠ PAUSED FOR USER REVIEW ⚠[/yellow]")
+            import time
+            time.sleep(2)  # Brief pause to let user see the error
+            input("Press Enter to continue or Ctrl+C to exit...")
+            raise  # Re-raise the exception to stop execution
 # Main execution
 if __name__ == "__main__":
     db_path = r"C:\Kiyabo App\backend\Kiyabo App Backend v3.0.0.accdb"

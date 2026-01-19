@@ -98,8 +98,10 @@ class DualExamProcessor:
         else:
             self.sort_columns = ['avg_marks', 'ranking_points', 'subject_count_real']
         
-        self.ascending = [True, False, False]  # points ASC, marks DESC, count DESC
+        self.ascending = self._build_sort_directions(self.sort_columns)
 
+        print(self.sort_columns)
+        print(self.ascending)
         # Database connections
         self.conn = None
         self.cursor = None
@@ -126,6 +128,36 @@ class DualExamProcessor:
             f"DBQ={self.DB_PATH};"
         )
         self.cursor = self.conn.cursor()
+
+
+    def _build_sort_directions(self, columns: list) -> list:
+        """
+        Build ascending/descending list based on column semantics.
+        
+        Rules:
+        - ranking_points, points → ASC (lower is better)
+        - avg_marks, total_marks, subject_count_real, subject_count → DESC (higher is better)
+        
+        Args:
+            columns: List of column names to sort by
+            
+        Returns:
+            list: Boolean list for pandas sort (True = ascending, False = descending)
+        """
+        ascending = []
+        for col in columns:
+            if col in ['ranking_points', 'points']:
+                # Lower points = better ranking
+                ascending.append(True)
+            elif col in ['avg_marks', 'total_marks', 'subject_count_real', 'subject_count']:
+                # Higher values = better ranking
+                ascending.append(False)
+            else:
+                # Default to descending for unknown columns
+                print(f"{self.YELLOW}⚠️  Warning: Unknown column '{col}' - defaulting to DESC sort")
+                ascending.append(False)
+        
+        return ascending
 
     def _fetch_exam_metadata(self):
         """Fetch exam names and class_id if not provided"""

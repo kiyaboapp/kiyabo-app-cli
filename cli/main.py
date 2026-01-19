@@ -83,7 +83,14 @@ def upload(
             success=importer.run()
             if success and process_after:
                 processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
-                processor.complete_exam()
+                try:
+                    processor.complete_exam()
+                except Exception as e:
+                    console.print(f"[red]ERROR:[/] Processing failed: {e}")
+                    import time
+                    time.sleep(2)  # Brief pause to let user see the error
+                    input("Press Enter to continue or Ctrl+C to exit...")
+                    raise  # Re-raise the exception
         else:
             console.print(f"[yellow]upload not implemented for {level}[/]")
     except Exception as e:
@@ -209,8 +216,15 @@ def process(
         
         elif level == "primary":
             processor = PrimaryProcessor(exam_id=exam_id, db_path=db_path)
-            processor.complete_exam()
-            console.print("[green]PROCESSING COMPLETE[/]")
+            try:
+                processor.complete_exam()
+                console.print("[green]PROCESSING COMPLETE[/]")
+            except Exception as e:
+                console.print(f"[red]ERROR:[/] Processing failed: {e}")
+                import time
+                time.sleep(2)  # Brief pause to let user see the error
+                input("Press Enter to continue or Ctrl+C to exit...")
+                raise  # Re-raise the exception
         else:
             console.print(f"[yellow]process not implemented for {level}[/]")
         
