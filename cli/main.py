@@ -58,7 +58,7 @@ def upload(
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
     process_after: bool = typer.Option(False, "--process", is_flag=True, help="Process after completion"),
     sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)")
-):
+    ):
     print_banner()
     try:
         print(f"Uploading {level} data for exam ID {exam_id} from {excel_path} to {db_path} process_after={process_after}")
@@ -110,7 +110,7 @@ def import_(
     db_path: str = typer.Option(..., "--db", "-d", help="Path to database file"),
     save_folder: str = typer.Option(r"C:\Kiyabo App\admission", "--save-folder", "-s", help="Folder to save processed files"),
     academic_year: int = typer.Option(None, "--academic-year", "-y", help="Academic year (defaults to current year if not specified)"),
-):
+    ):
     try:
         level=level.lower()
         class_id=class_id.upper()
@@ -151,7 +151,7 @@ def export(
     order_by: str = typer.Option("position", "--order-by"),
     paper_size: str = typer.Option("A4", "--paper-size"),
     orientation: str = typer.Option(None, "--orientation"),
-):
+    ):
     print_banner()
     try:
         level = level.lower()
@@ -186,7 +186,7 @@ def process(
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
     sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
     flat_rate:bool=typer.Option(False,"--flat/--no-flat",help="Will yiu take Top Bests Subjects or Average All?")
-):
+    ):
     print_banner()
     try:
         level = level.lower()

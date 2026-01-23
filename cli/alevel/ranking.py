@@ -623,24 +623,29 @@ class AlevelProcessor:
             self.df.loc[sub_df.index, [pos_col, out_col]] = sub_df[[pos_col, out_col]]
     
     def finalize_data_types(self):
-        """Finalize data types for all fields."""
-        console.print("\n[bold cyan]Stage 9: Finalizing Data Types and Updating DB[/bold cyan]")
-        
-        int_fields = ['position_school', 'position_comb', 'out_of_school', 'out_of_comb',
-                      'first', 'second', 'third', 'points', 'subject_count', 'subject_count_all'] + \
-                     [f"{sub}_pos" for sub in self.valid_subjects] + [f"{sub}_out_of" for sub in self.valid_subjects]
-        
-        for field in int_fields:
-            if field in self.df.columns:
-                self.df[field] = pd.to_numeric(self.df[field], errors='coerce').astype('Int64')
-        
-        if 'gpa' in self.df.columns:
-            self.df['gpa'] = pd.to_numeric(self.df['gpa'], errors='coerce').round(4)
-        
-        if 'computed_points' in self.df.columns:
-            self.df = self.df.drop(columns=['computed_points'])
-        
-        console.print(" [green]- Data types finalized.[/green]")
+            """Finalize data types for all fields."""
+            console.print("\n[bold cyan]Stage 9: Finalizing Data Types and Updating DB[/bold cyan]")
+            
+            int_fields = ['position_school', 'position_comb', 'out_of_school', 'out_of_comb',
+                        'first', 'second', 'third', 'points', 'subject_count', 'subject_count_all'] + \
+                        [f"{sub}_pos" for sub in self.valid_subjects] + [f"{sub}_out_of" for sub in self.valid_subjects]
+            
+            for field in int_fields:
+                if field in self.df.columns:
+                    # Round first to handle any floating point precision issues, then convert
+                    self.df[field] = pd.to_numeric(self.df[field], errors='coerce').round().astype('Int64')
+            
+            if 'gpa' in self.df.columns:
+                self.df['gpa'] = pd.to_numeric(self.df['gpa'], errors='coerce').round(4)
+            
+            # Also round avg_marks if it exists
+            if 'avg_marks' in self.df.columns:
+                self.df['avg_marks'] = pd.to_numeric(self.df['avg_marks'], errors='coerce').round(4)
+            
+            if 'computed_points' in self.df.columns:
+                self.df = self.df.drop(columns=['computed_points'])
+            
+            console.print(" [green]- Data types finalized.[/green]")
     
     def update_database(self):
         """Update database with computed results."""
