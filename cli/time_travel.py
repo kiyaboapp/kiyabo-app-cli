@@ -17,9 +17,10 @@ class Color:
     ORANGE = '\033[38;5;214m'
 
 class TimeTravelProcessor:
-    def __init__(self, level, db_path):
+    def __init__(self, level, db_path, **kwargs):
         self.level = level.lower()
         self.db_path = db_path
+        self.kwargs = kwargs  # Store additional parameters
         
     def into_the_future(self):
         """Main processing method"""
@@ -90,19 +91,61 @@ class TimeTravelProcessor:
     def _process_single_exam(self, exam_data):
         """Process a single exam"""
         if self.level == "olevel":
-            processor = OlevelProcessor(exam_id=exam_data.exam_id, db_path=self.db_path)
+            # Pass all kwargs to OlevelProcessor
+            processor = OlevelProcessor(
+                exam_id=exam_data.exam_id, 
+                db_path=self.db_path,
+                **self.kwargs
+            )
             processor.run()
         elif self.level == "alevel":
-            processor = AlevelProcessor(exam_id=exam_data.exam_id, db_path=self.db_path)
+            # Pass all kwargs to AlevelProcessor
+            processor = AlevelProcessor(
+                exam_id=exam_data.exam_id, 
+                db_path=self.db_path,
+                **self.kwargs
+            )
             processor.run()
         elif self.level == "primary":
-            processor=PrimaryProcessor(db_path=self.db_path,exam_id=exam_data.exam_id)
+            # Primary processor only needs db_path and exam_id
+            # Pass include_necta_total if provided
+            processor_kwargs = {
+                'db_path': self.db_path,
+                'exam_id': exam_data.exam_id
+            }
+            if 'include_necta_total' in self.kwargs:
+                processor_kwargs['include_necta_total'] = self.kwargs['include_necta_total']
+            
+            processor = PrimaryProcessor(**processor_kwargs)
             processor.complete_exam()
         else:
             raise ValueError(f"Invalid level: {self.level}")
 
 
-def into_the_future(level, db_path):
-    """Facade function"""
-    processor = TimeTravelProcessor(level, db_path)
+def into_the_future(level, db_path, **kwargs):
+    """Facade function - Process all exams for a given level
+    
+    Args:
+        level: Education level ('olevel', 'alevel', 'primary')
+        db_path: Path to Access database
+        **kwargs: Additional parameters passed to underlying processors
+            For O-Level:
+                base_subjects (int): Number of subjects for base calculation (default: 7)
+                flat_rate (bool): Use flat rate calculation (default: True)
+                include_inc (bool): Include incomplete students (default: True)
+                update_competency (bool): Update competency analysis (default: True)
+                sort_columns (list): Sort columns (default: ['avg_marks', 'ranking_points', 'subject_count_real'])
+                ranking_method (str): Ranking method - 'min', 'max', 'average', 'dense', 'first' (default: 'min')
+                rank_incs (bool): Rank incomplete students (default: False)
+            
+            For A-Level:
+                sort_columns (list): Sort columns (default: ['avg_marks', 'points', 'subject_count'])
+                include_inc (bool): Include incomplete students (default: True)
+                rank_method (str): Ranking method - 'min', 'max', 'average', 'dense', 'first' (default: 'min')
+                rank_incs (bool): Rank incomplete students (default: False)
+            
+            For Primary:
+                include_necta_total (bool): Include NECTA total in results (default: False)
+    """
+    processor = TimeTravelProcessor(level, db_path, **kwargs)
     processor.into_the_future()

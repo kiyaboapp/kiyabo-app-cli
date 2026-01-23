@@ -186,7 +186,11 @@ def process(
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
     sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
     flat_rate:bool=typer.Option(False,"--flat/--no-flat",help="Will yiu take Top Bests Subjects or Average All?"),
-    rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking")
+    rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking"),
+    base_subjects: int = typer.Option(7, "--base-subjects", help="Number of subjects for base calculation (O-Level only)"),
+    update_competency: bool = typer.Option(True, "--update-comp/--no-update-comp", help="Update competency analysis for O-Level"),
+    ranking_method: str = typer.Option("min", "--ranking-method", help="Ranking method: min, max, average, dense, first (applies to both O-Level and A-Level)"),
+    include_necta_total: bool = typer.Option(False, "--necta-total/--no-necta-total", help="Include NECTA total in primary results")
     ):
     print_banner()
     try:
@@ -202,7 +206,8 @@ def process(
                 db_path=db_path,
                 sort_columns=sort_cols_list,
                 include_inc=include_inc,
-                rank_incs=rank_incs
+                rank_incs=rank_incs,
+                rank_method=ranking_method
                 )
             processor.run()
         
@@ -212,12 +217,22 @@ def process(
             else:
                 sort_cols_list = None
 
-            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc,flat_rate=flat_rate,rank_incs=rank_incs)
+            processor = OlevelProcessor(
+                exam_id=exam_id, 
+                db_path=db_path,
+                sort_columns=sort_cols_list,
+                include_inc=include_inc,
+                flat_rate=flat_rate,
+                rank_incs=rank_incs,
+                base_subjects=base_subjects,
+                update_competency=update_competency,
+                ranking_method=ranking_method
+            )
             processor.run()
             console.print("[green]PROCESSING COMPLETE[/]")
         
         elif level == "primary":
-            processor = PrimaryProcessor(exam_id=exam_id, db_path=db_path)
+            processor = PrimaryProcessor(exam_id=exam_id, db_path=db_path, include_necta_total=include_necta_total)
             try:
                 processor.complete_exam()
                 console.print("[green]PROCESSING COMPLETE[/]")
@@ -323,6 +338,13 @@ def pip(args: List[str] = typer.Argument(None)):
 def future_from_antique(
     level: str = typer.Argument(..., help="School level"),
     db_path: str = typer.Option(None, "--db"),
+    include_inc: bool = typer.Option(True, "--inc/--no-inc"),
+    sort_cols: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
+    flat_rate: bool = typer.Option(False, "--flat/--no-flat", help="Will you take Top Best Subjects or Average All?"),
+    rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking"),
+    update_competency: bool = typer.Option(True, "--update-comp/--no-update-comp", help="Update competency analysis for O-Level"),
+    ranking_method: str = typer.Option("min", "--ranking-method", help="Ranking method: min, max, average, dense, first (applies to both O-Level and A-Level)"),
+    include_necta_total: bool = typer.Option(False, "--necta-total/--no-necta-total", help="Include NECTA total in primary results"),
 ):
     """Run future_from_antique to update old Kiyabo App databases"""
     print_banner()
@@ -330,7 +352,26 @@ def future_from_antique(
         raise typer.BadParameter("Database path is required", param_hint="--db")
     
     try:
-        space_ship = TimeTravelProcessor(level=level, db_path=db_path)
+        # Prepare kwargs based on level
+        kwargs = {}
+        
+        if level.lower() in ["olevel", "alevel"]:
+            kwargs['include_inc'] = include_inc
+            kwargs['rank_incs'] = rank_incs
+            kwargs['rank_method'] = ranking_method  # Use same parameter name for A-Level
+            
+            if sort_cols:
+                kwargs['sort_columns'] = [col.strip() for col in sort_cols.split(",")]
+            
+            if level.lower() == "olevel":
+                kwargs['flat_rate'] = flat_rate
+                kwargs['update_competency'] = update_competency
+                kwargs['ranking_method'] = ranking_method  # Use original name for O-Level
+        
+        if level.lower() == "primary":
+            kwargs['include_necta_total'] = include_necta_total
+        
+        space_ship = TimeTravelProcessor(level=level, db_path=db_path, **kwargs)
         space_ship.into_the_future()
     except Exception as e:
         console.print(f"[red]ERROR:[/] {e}")
