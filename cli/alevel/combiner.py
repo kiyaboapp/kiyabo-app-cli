@@ -774,7 +774,7 @@ class DualAlevelProcessor:
             
             sub_df = sub_df.sort_values(sub, ascending=False)
             sub_df['rank_temp'] = sub_df[sub].rank(method='min', ascending=False)
-            sub_df[pos_col] = sub_df['rank_temp'].astype('Int64')
+            sub_df[pos_col] = sub_df['rank_temp'].astype('float64').round().astype('Int64')
             sub_df[out_col] = len(sub_df)
             
             df.loc[sub_df.index, [pos_col, out_col]] = sub_df[[pos_col, out_col]]

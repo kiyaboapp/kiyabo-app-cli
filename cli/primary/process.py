@@ -490,7 +490,7 @@ class ExamProcessor:
         console.print("[yellow]🏆 Overall ranking...[/yellow]")
         df.loc[has_results, 'pos'] = df.loc[has_results, 'total_marks'].rank(
             method='min', ascending=False
-        ).astype('Int64')
+        ).astype('float64').round().astype('Int64')
         df.loc[has_results, 'out_of'] = has_results.sum()
         console.print(f"[green]✓[/green] Ranked {has_results.sum()} students overall")
         
@@ -502,7 +502,7 @@ class ExamProcessor:
                 if mask.any():
                     df.loc[mask, 'pos_sex'] = df.loc[mask, 'total_marks'].rank(
                         method='min', ascending=False
-                    ).astype('Int64')
+                    ).astype('float64').round().astype('Int64')
                     df.loc[mask, 'out_of_sex'] = mask.sum()
                     sex_counts[sex] = mask.sum()
             
@@ -517,7 +517,7 @@ class ExamProcessor:
                 if mask.any():
                     df.loc[mask, 'pos_stream'] = df.loc[mask, 'total_marks'].rank(
                         method='min', ascending=False
-                    ).astype('Int64')
+                    ).astype('float64').round().astype('Int64')
                     df.loc[mask, 'out_of_stream'] = mask.sum()
                     stream_counts[stream] = mask.sum()
             
@@ -548,7 +548,7 @@ class ExamProcessor:
                    
                     df.loc[has_marks, pos_col] = df.loc[has_marks, subject].rank(
                         method='min', ascending=False
-                    ).astype('Int64')
+                    ).astype('float64').round().astype('Int64')
                     df.loc[has_marks, out_of_col] = has_marks.sum()
                    
                     if 'sex' in df.columns:
@@ -557,7 +557,7 @@ class ExamProcessor:
                             if mask.any():
                                 df.loc[mask, f"{subject}_pos_sex"] = df.loc[mask, subject].rank(
                                     method='min', ascending=False
-                                ).astype('Int64')
+                                ).astype('float64').round().astype('Int64')
                                 df.loc[mask, f"{subject}_sex_out_of"] = mask.sum()
                    
                     if 'section_id' in df.columns:
@@ -566,7 +566,7 @@ class ExamProcessor:
                             if mask.any():
                                 df.loc[mask, f"{subject}_pos_stream"] = df.loc[mask, subject].rank(
                                     method='min', ascending=False
-                                ).astype('Int64')
+                                ).astype('float64').round().astype('Int64')
                                 df.loc[mask, f"{subject}_pos_stream_out_of"] = mask.sum()
                
                 pbar.update(1)

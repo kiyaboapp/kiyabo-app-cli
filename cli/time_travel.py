@@ -93,7 +93,7 @@ class TimeTravelProcessor:
             processor = OlevelProcessor(exam_id=exam_data.exam_id, db_path=self.db_path)
             processor.run()
         elif self.level == "alevel":
-            processor = AlevelProcessor(exam_id=exam_data.exam_id, dbpath=self.db_path,)
+            processor = AlevelProcessor(exam_id=exam_data.exam_id, db_path=self.db_path)
             processor.run()
         elif self.level == "primary":
             processor=PrimaryProcessor(db_path=self.db_path,exam_id=exam_data.exam_id)

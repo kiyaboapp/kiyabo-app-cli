@@ -231,7 +231,7 @@ rank_df = rank_df.sort_values(
     na_position='last'
 )
 rank_df['position'] = rank_df.groupby('points').cumcount() + 1
-rank_df['position'] = rank_df['position'].rank(method='min').astype('Int64')
+rank_df['position'] = rank_df['position'].rank(method='min').astype('float64').round().astype('Int64')
 rank_df['out_of'] = len(rank_df)
 
 df = df.merge(rank_df[['result_id','position','out_of']], on='result_id', how='left')
@@ -260,7 +260,7 @@ for col in valid_cols:
     sub_df = df[df[col].notna()].sort_values(col, ascending=False)
     pos_col = f"{col}_pos"
     out_col = f"{col}_out_of"
-    sub_df[pos_col] = sub_df[col].rank(method='min', ascending=False).astype('Int64')
+    sub_df[pos_col] = sub_df[col].rank(method='min', ascending=False).astype('float64').round().astype('Int64')
     sub_df[out_col] = len(sub_df)
     df[pos_col] = df['result_id'].map(sub_df.set_index('result_id')[pos_col])
     df[out_col] = df['result_id'].map(sub_df.set_index('result_id')[out_col])

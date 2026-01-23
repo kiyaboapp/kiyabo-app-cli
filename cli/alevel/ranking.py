@@ -232,7 +232,7 @@ class AlevelProcessor:
             if self.df[sub].ge(0).any():
                 self.valid_subjects.append(sub)
             else:
-                console.print(f" [yellow]- Dropping subject {sub}: no valid marks >=0 in any record.[/yellow]")
+                # console.print(f" [yellow]- Dropping subject {sub}: no valid marks >=0 in any record.[/yellow]")
                 if sub in self.df.columns:
                     self.df = self.df.drop(columns=[sub])
         
@@ -630,7 +630,7 @@ class AlevelProcessor:
             
             sub_df = sub_df.sort_values(sub, ascending=False)
             sub_df['rank_temp'] = sub_df[sub].rank(method='min', ascending=False)
-            sub_df[pos_col] = sub_df['rank_temp'].astype('Int64')
+            sub_df[pos_col] = sub_df['rank_temp'].round().astype('Int64')
             sub_df[out_col] = len(sub_df)
             
             self.df.loc[sub_df.index, [pos_col, out_col]] = sub_df[[pos_col, out_col]]
@@ -645,8 +645,10 @@ class AlevelProcessor:
             
             for field in int_fields:
                 if field in self.df.columns:
-                    # Round first to handle any floating point precision issues, then convert
-                    self.df[field] = pd.to_numeric(self.df[field], errors='coerce').round().astype('Int64')
+                    # Convert to numeric first, then to float64, round, then convert to Int64
+                    # This handles both regular floats and extension arrays safely
+                    numeric_series = pd.to_numeric(self.df[field], errors='coerce')
+                    self.df[field] = numeric_series.astype('float64').round().astype('Int64')
             
             if 'gpa' in self.df.columns:
                 self.df['gpa'] = pd.to_numeric(self.df['gpa'], errors='coerce').round(4)
