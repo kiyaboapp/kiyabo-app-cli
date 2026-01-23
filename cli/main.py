@@ -185,7 +185,8 @@ def process(
     db_path: str = typer.Option(r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb", "--db"),
     include_inc: bool = typer.Option(True, "--inc/--no-inc"),
     sort_cols: str=typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
-    flat_rate:bool=typer.Option(False,"--flat/--no-flat",help="Will yiu take Top Bests Subjects or Average All?")
+    flat_rate:bool=typer.Option(False,"--flat/--no-flat",help="Will yiu take Top Bests Subjects or Average All?"),
+    rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking")
     ):
     print_banner()
     try:
@@ -200,7 +201,8 @@ def process(
                 exam_id=exam_id,
                 db_path=db_path,
                 sort_columns=sort_cols_list,
-                include_inc=include_inc
+                include_inc=include_inc,
+                rank_incs=rank_incs
                 )
             processor.run()
         
@@ -210,7 +212,7 @@ def process(
             else:
                 sort_cols_list = None
 
-            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc,flat_rate=flat_rate)
+            processor = OlevelProcessor(exam_id=exam_id, db_path=db_path,sort_columns=sort_cols_list,include_inc=include_inc,flat_rate=flat_rate,rank_incs=rank_incs)
             processor.run()
             console.print("[green]PROCESSING COMPLETE[/]")
         

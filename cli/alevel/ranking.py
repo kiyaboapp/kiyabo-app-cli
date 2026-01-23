@@ -50,7 +50,8 @@ class AlevelProcessor:
     def __init__(self, exam_id: str, db_path: str, 
                  sort_columns: list = None,
                  include_inc: bool = True,
-                 rank_method: str = 'min'):
+                 rank_method: str = 'min',
+                 rank_incs: bool = False):
         """
         Initialize the A-Level processor.
         
@@ -65,9 +66,14 @@ class AlevelProcessor:
         self.sort_columns = sort_columns or ["avg_marks","points", "subject_count"]
         self.include_inc = include_inc
         self.rank_method = rank_method
+        self.rank_incs = rank_incs
         
         # Build ascending list based on fixed rules
         self.sort_ascending = [self.SORT_ASCENDING[col] for col in self.sort_columns]
+        
+        # If ranking incompletes and points is in sort columns, we want NaN points to be treated as worst
+        # Since NaN points are filled with high values, we need to keep ascending order for points
+        # to make them appear last when sorting by points (lower is better for points)
         
         # Runtime attributes
         self.conn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=' + db_path + ';'
@@ -419,11 +425,15 @@ class AlevelProcessor:
         print(f" [cyan]🔍 DEBUG: Total students before filtering: {len(exam_df):,}[/cyan]")
         
         # Filter criteria MUST match StudentExamExporter exactly
-        invalid_mask = (
-            (exam_df['division'] == 'ABS') |
-            (exam_df['points'].isna()) |
-            (exam_df['avg_marks'].isna())
-        )
+        invalid_conditions = [(exam_df['division'] == 'ABS'), (exam_df['avg_marks'].isna())]
+        
+        # Only exclude students with NaN points if rank_incs is False
+        if not self.rank_incs:
+            invalid_conditions.append(exam_df['points'].isna())
+        
+        invalid_mask = invalid_conditions[0]
+        for condition in invalid_conditions[1:]:
+            invalid_mask = invalid_mask | condition
         
         valid_students = exam_df[~invalid_mask].copy()
         invalid_students = exam_df[invalid_mask]
@@ -451,7 +461,10 @@ class AlevelProcessor:
             before_fill = valid_students[col].isna().sum()
             
             if col == 'points':
-                valid_students[col] = valid_students[col].fillna(999999)
+                # If ranking incompletes, NaN points become worst (highest value) so they appear last when sorted ascending
+                # Otherwise, NaN points are excluded from ranking entirely
+                fill_value = 999999
+                valid_students[col] = valid_students[col].fillna(fill_value)
             elif col == 'avg_marks':
                 valid_students[col] = valid_students[col].fillna(-1)
             elif col in ['subject_count', 'subject_count_all']:

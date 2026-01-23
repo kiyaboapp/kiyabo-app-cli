@@ -41,7 +41,8 @@ class OlevelProcessor:
         include_inc: bool = True,
         update_competency: bool = True,
         sort_columns: list = None,
-        ranking_method: str = "min"
+        ranking_method: str = "min",
+        rank_incs: bool = False
     ):
         """
         Initialize O-Level Processor with flexible ranking configuration.
@@ -55,6 +56,7 @@ class OlevelProcessor:
             update_competency: Update competency analysis (default: True)
             sort_columns: List of columns to sort by (default: ['ranking_points', 'avg_marks', 'subject_count_real'])
             ranking_method: Ranking method - 'min', 'max', 'average', 'dense', 'first' (default: 'min')
+            rank_incs: Include incomplete students in ranking (default: False)
         """
         self.EXAM_ID = exam_id
         self.DB_PATH = db_path
@@ -63,6 +65,7 @@ class OlevelProcessor:
         self.INCLUDE_INC = include_inc
         self.UPDATE_COMPETENCY = update_competency
         self.RANKING_METHOD = ranking_method.lower()
+        self.RANK_INCS = rank_incs
 
         # Validate ranking method
         valid_methods = ['min', 'max', 'average', 'dense', 'first']
@@ -76,6 +79,10 @@ class OlevelProcessor:
 
         # Build sort directions dynamically based on column semantics
         self.ascending = self._build_sort_directions(sort_columns)
+        
+        # If ranking incompletes and points/ranking_points is in sort columns, 
+        # keep the original sort direction so NaN points (filled with high values) appear at the end
+        # For 'points' and 'ranking_points', lower is better, so ascending order keeps high-filled values last
         
         # Database connections and dataframes
         self.conn = None
@@ -406,13 +413,22 @@ class OlevelProcessor:
         print(f"\n{self.GREEN}6. ACADEMIC RANKING ({self.RANKING_METHOD.upper()} METHOD)")
         print("=" * 60)
 
-        # Separate ABS students (they don't get ranked)
+        # Separate invalid students (they don't get ranked)
+        # ABS students are always excluded
+        invalid_mask = (self.df['division'] == 'ABS')
+        
+        # Only exclude students with NaN points if rank_incs is False
+        if not self.RANK_INCS:
+            invalid_mask = invalid_mask | (self.df['points'].isna())
+        
         abs_students = self.df[self.df['division'] == 'ABS'].copy()
-        valid_students = self.df[self.df['division'] != 'ABS'].copy()
+        valid_students = self.df[~invalid_mask].copy()
 
         print(f"{self.YELLOW}RANKING BREAKDOWN:")
         print(f"   • ABS Students: {self.WHITE}{len(abs_students):,}")
+        print(f"   • Students with NaN Points: {self.WHITE}{self.df['points'].isna().sum():,}")
         print(f"   • Valid Students: {self.WHITE}{len(valid_students):,}")
+        print(f"   • Ranking Incompletes: {self.WHITE}{'Yes' if self.RANK_INCS else 'No'}")
         print(f"   • Sort Columns: {self.WHITE}{', '.join(self.sort_columns)}")
         print(f"   • Sort Directions: {self.WHITE}{', '.join(['ASC' if asc else 'DESC' for asc in self.ascending])}")
         print(f"   • Ranking Method: {self.WHITE}{self.RANKING_METHOD}")
@@ -424,7 +440,9 @@ class OlevelProcessor:
         # Handle ranking_points column for students with NULL points
         if 'ranking_points' in self.sort_columns:
             max_points = valid_students['points'].max() if not valid_students['points'].isna().all() else 35
-            valid_students['ranking_points'] = valid_students['points'].fillna(max_points + 1)
+            # Fill NaN points with worst possible value
+            fill_value = max_points + 1
+            valid_students['ranking_points'] = valid_students['points'].fillna(fill_value)
 
         # Verify all sort columns exist
         missing_cols = [col for col in self.sort_columns if col not in valid_students.columns]
