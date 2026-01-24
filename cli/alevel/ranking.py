@@ -93,7 +93,7 @@ class AlevelProcessor:
             conn = self.connect_db()
             cursor = conn.cursor()
             
-            sql = "SELECT class_id FROM tbl_exams WHERE exam_id = ?"
+            sql = "SELECT class_id FROM tbl_student_exams WHERE exam_id = ?"
             cursor.execute(sql, (self.exam_id,))
             result = cursor.fetchone()
             
@@ -109,9 +109,9 @@ class AlevelProcessor:
             if self.exam_id and len(self.exam_id) >= 4:
                 if 'VI' in self.exam_id.upper():
                     return 'VI'
-                elif self.exam_id[3:5] == '62':  # Form VI pattern
+                elif self.exam_id[3:4] == '6':  # Form VI pattern
                     return 'VI'
-                elif self.exam_id[3:5] == '61':  # Form V pattern
+                elif self.exam_id[3:4] == '5':  # Form V pattern
                     return 'V'
             return ""
     
