@@ -166,6 +166,119 @@ class AlevelProcessor:
             table.add_row(*values)
         console.print(table)
     
+    def _display_combination_structure(self):
+        """Display debug table showing what subjects belong to each combination."""
+        console.print("\n[bold magenta]═══════════════════════════════════════════════════════════════════════[/bold magenta]")
+        console.print("[bold magenta]              COMBINATION STRUCTURE DEBUG TABLE                        [/bold magenta]")
+        console.print("[bold magenta]═══════════════════════════════════════════════════════════════════════[/bold magenta]")
+        
+        # Get unique combinations from students
+        student_combs = self.df['comb_id'].unique()
+        
+        table = Table(
+            box=box.DOUBLE_EDGE,
+            border_style="cyan",
+            expand=True,
+            title="[bold white on #1e1b4b] COMBINATION SUBJECTS BREAKDOWN [/]"
+        )
+        
+        table.add_column("COMB ID", style="bold cyan", justify="center")
+        table.add_column("TOTAL\nSUBJECTS", style="bold yellow", justify="center")
+        table.add_column("CORE\nSUBJECTS", style="bold green", justify="center")
+        table.add_column("ELECTIVE\nSUBJECTS", style="bold magenta", justify="center")
+        table.add_column("ALL SUBJECTS IN COMBINATION", style="white", justify="left")
+        table.add_column("STUDENTS\nIN COMB", style="bold blue", justify="center")
+        
+        for comb_id in sorted(student_combs):
+            comb_subjects = self.comb_metadata[self.comb_metadata['comb_id'] == str(comb_id)]
+            
+            if comb_subjects.empty:
+                console.print(f" [red]⚠ Combination {comb_id} has NO subjects defined in metadata![/red]")
+                continue
+            
+            # Separate core and elective
+            core_subjects = comb_subjects[comb_subjects['is_core'] == True]
+            elective_subjects = comb_subjects[comb_subjects['is_core'] == False]
+            
+            # Build subject list with markers
+            all_subs = []
+            for _, row in comb_subjects.iterrows():
+                short = row['subject_short'].upper()
+                user = row['subject_user_short']
+                marker = "★" if row['is_core'] else "○"
+                all_subs.append(f"{marker}{user}")
+            
+            # Count students in this combination
+            student_count = len(self.df[self.df['comb_id'] == str(comb_id)])
+            
+            table.add_row(
+                str(comb_id),
+                str(len(comb_subjects)),
+                str(len(core_subjects)),
+                str(len(elective_subjects)),
+                ", ".join(all_subs),
+                str(student_count)
+            )
+        
+        console.print(table)
+        console.print("\n[cyan]Legend: ★ = Core Subject  |  ○ = Elective Subject[/cyan]")
+        console.print("[yellow]Note: subject_count_all = ALL subjects in combination (with/without marks) + Extra subjects with marks[/yellow]")
+        console.print("[yellow]      subject_count = ONLY subjects the student attempted (has marks for)[/yellow]\n")
+    
+    def _display_subject_count_discrepancy(self):
+        """Display students where subject_count_all differs from subject_count."""
+        console.print("\n[bold yellow]Subject Count Discrepancy Analysis[/bold yellow]")
+        
+        discrepancy_df = self.df[
+            (self.df['subject_count_all'] != self.df['subject_count']) & 
+            (self.df['division'] != 'ABS')
+        ].copy()
+        
+        if discrepancy_df.empty:
+            console.print(" [green]✓ No discrepancies found - all students have matching counts[/green]")
+            return
+        
+        console.print(f" [yellow]⚠ Found {len(discrepancy_df)} students with count discrepancies[/yellow]")
+        
+        table = Table(
+            title="[bold white on red] SUBJECT COUNT DISCREPANCIES [/]",
+            box=box.DOUBLE_EDGE,
+            border_style="red",
+            expand=True
+        )
+        
+        table.add_column("STUDENT ID", style="cyan", justify="left")
+        table.add_column("NAME", style="white", justify="left")
+        table.add_column("COMB", style="yellow", justify="center")
+        table.add_column("COUNT", style="bold green", justify="center")
+        table.add_column("COUNT ALL", style="bold magenta", justify="center")
+        table.add_column("DIFF", style="bold red", justify="center")
+        table.add_column("DIVISION", style="white", justify="center")
+        
+        for _, row in discrepancy_df.head(20).iterrows():
+            count = int(row['subject_count']) if pd.notna(row['subject_count']) else 0
+            count_all = int(row['subject_count_all']) if pd.notna(row['subject_count_all']) else 0
+            diff = count_all - count
+            
+            table.add_row(
+                str(row['student_id']),
+                str(row['full_name'])[:30],
+                str(row['comb_id']),
+                str(count),
+                str(count_all),
+                f"+{diff}" if diff > 0 else str(diff),
+                str(row['division'])
+            )
+        
+        console.print(table)
+        
+        # Summary statistics
+        console.print(f"\n[bold cyan]Summary:[/bold cyan]")
+        console.print(f" - Total students with discrepancy: {len(discrepancy_df)}")
+        console.print(f" - Average count: {discrepancy_df['subject_count'].mean():.2f}")
+        console.print(f" - Average count_all: {discrepancy_df['subject_count_all'].mean():.2f}")
+        console.print(f" - Max difference: {(discrepancy_df['subject_count_all'] - discrepancy_df['subject_count']).max()}")
+    
     def detect_columns(self):
         """Detect available columns in the database."""
         console.print("\n[bold cyan]Stage 1: Connecting to Database and Detecting Columns[/bold cyan]")
@@ -223,20 +336,25 @@ class AlevelProcessor:
         self._preview("RAW MARKS – First 12 Students", ['full_name','sex','comb_id'] + potential_subjects[:9], highlight=potential_subjects[:9])
     
     def filter_valid_subjects(self, potential_subjects):
-        """Filter subjects that have at least one valid mark."""
+        """Filter subjects that have at least one valid mark and REMOVE those with no marks."""
         console.print("\n[bold cyan]Stage 2.5: Filtering Subjects with At Least One Valid Mark (>=0)[/bold cyan]")
         self.valid_subjects = []
+        removed_subjects = []
         
         for sub in potential_subjects:
             self.df[sub] = pd.to_numeric(self.df[sub], errors='coerce')
             if self.df[sub].ge(0).any():
                 self.valid_subjects.append(sub)
             else:
-                # console.print(f" [yellow]- Dropping subject {sub}: no valid marks >=0 in any record.[/yellow]")
-                if sub in self.df.columns:
-                    self.df = self.df.drop(columns=[sub])
+                removed_subjects.append(sub)
+                # DROP the column entirely - no use keeping it
+                self.df = self.df.drop(columns=[sub])
+                console.print(f" [red]✗ Subject {sub} has NO valid marks - REMOVED from dataset[/red]")
         
-        console.print(f" [green]- Retained {len(self.valid_subjects)} subjects with valid marks: {self.valid_subjects}[/green]")
+        if removed_subjects:
+            console.print(f" [yellow]⚠ Removed {len(removed_subjects)} subjects with no marks: {removed_subjects}[/yellow]")
+        
+        console.print(f" [green]✓ Retained {len(self.valid_subjects)} subjects with valid marks: {self.valid_subjects}[/green]")
         self._preview("VALID SUBJECT MARKS – First 12 Students", ['full_name'] + self.valid_subjects[:10], highlight=self.valid_subjects[:10])
     
     def load_metadata(self):
@@ -255,6 +373,11 @@ class AlevelProcessor:
         self.subject_to_user = dict(zip(sub_df['subject_short'].str.lower(), sub_df['subject_user_short']))
         
         self.df['comb_id'] = self.df['comb_id'].astype(str)
+        
+        # ============================================================
+        # NEW: DISPLAY COMBINATION STRUCTURE DEBUG TABLE
+        # ============================================================
+        self._display_combination_structure()
     
     def reset_computed_fields(self):
         """Reset all computed fields in the database."""
@@ -344,9 +467,25 @@ class AlevelProcessor:
         attempted_effective = [sub for sub in effective_cores if pd.notna(row.get(sub))]
         missing_count = len(effective_cores) - len(attempted_effective)
         
-        attempted_all = [sub for sub in self.valid_subjects if pd.notna(row.get(sub))]
-        row['subject_count_all'] = len(attempted_all) if attempted_all else 0
-        row['subject_count'] = len(attempted_effective) if attempted_effective else 0
+        # ============================================================
+        # FIXED LOGIC:
+        # subject_count_all = ALL subjects in combination (with OR without marks) + extra subjects with marks
+        # subject_count = ONLY subjects the student attempted (has marks for)
+        # ============================================================
+        
+        # Count ALL subjects in combination (regardless of marks)
+        all_in_comb = len(comb_shorts)
+        
+        # Count extra subjects NOT in combination but student has marks for
+        attempted_extra = [sub for sub in self.valid_subjects 
+                          if pd.notna(row.get(sub)) and row.get(sub) >= 0 and sub not in comb_shorts]
+        
+        # subject_count_all = all in combination + extras with marks
+        row['subject_count_all'] = all_in_comb + len(attempted_extra)
+        
+        # subject_count = ONLY subjects student actually attempted (has marks for)
+        attempted_all = [sub for sub in self.valid_subjects if pd.notna(row.get(sub)) and row.get(sub) >= 0]
+        row['subject_count'] = len(attempted_all)
         
         if row['subject_count_all'] > 0:
             row['avg_marks'] = row['total_marks'] / row['subject_count_all']
@@ -400,6 +539,9 @@ class AlevelProcessor:
         self.df = self.df.progress_apply(self.process_student_row, axis=1)
         console.print(" [green]- All student rows processed.[/green]")
         self._preview("FINAL RESULTS – First 12 Students", ['full_name','division','points','gpa','first','second','third'], highlight=['division','points','gpa'])
+        
+        # Display subject count discrepancy table
+        self._display_subject_count_discrepancy()
 
 
 
