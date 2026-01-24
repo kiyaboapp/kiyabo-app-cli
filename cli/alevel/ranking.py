@@ -1,6 +1,7 @@
 import pandas as pd
 import pyodbc
 import numpy as np
+from datetime import datetime
 from tqdm import tqdm
 from rich.console import Console
 from rich.table import Table
@@ -71,10 +72,6 @@ class AlevelProcessor:
         # Build ascending list based on fixed rules
         self.sort_ascending = [self.SORT_ASCENDING[col] for col in self.sort_columns]
         
-        # If ranking incompletes and points is in sort columns, we want NaN points to be treated as worst
-        # Since NaN points are filled with high values, we need to keep ascending order for points
-        # to make them appear last when sorting by points (lower is better for points)
-        
         # Runtime attributes
         self.conn_str = r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=' + db_path + ';'
         self.df = None
@@ -82,25 +79,80 @@ class AlevelProcessor:
         self.comb_metadata = None
         self.subject_to_user = {}
         self.db_columns = []
-        self.grade_boundaries = None  # NEW: Will hold grade boundaries from database
+        self.grade_boundaries = None
+        self.class_id = ""  # NEW: Store class_id for curriculum handling
         
     @staticmethod
     def bracket_field(field: str) -> str:
         """Wrap field name in brackets for SQL queries."""
         return f"[{field}]"
     
+    def get_class_from_exam_id(self):
+        """Extract class ID from exam record in database."""
+        try:
+            conn = self.connect_db()
+            cursor = conn.cursor()
+            
+            sql = "SELECT class_id FROM tbl_exams WHERE exam_id = ?"
+            cursor.execute(sql, (self.exam_id,))
+            result = cursor.fetchone()
+            
+            cursor.close()
+            conn.close()
+            
+            if result:
+                return result[0]
+            return ""
+            
+        except Exception as e:
+            # Try to extract class from exam_id format
+            if self.exam_id and len(self.exam_id) >= 4:
+                if 'VI' in self.exam_id.upper():
+                    return 'VI'
+                elif self.exam_id[3:5] == '62':  # Form VI pattern
+                    return 'VI'
+                elif self.exam_id[3:5] == '61':  # Form V pattern
+                    return 'V'
+            return ""
+    
+    def get_valid_subjects_for_curriculum(self):
+        """Get list of valid subjects based on curriculum (Form VI old vs new)."""
+        conn = self.connect_db()
+        
+        # Build SQL based on curriculum
+        if self.class_id == "VI" and datetime.now() < datetime(2026, 7, 1):
+            # Form VI old curriculum: include subject 31 (gs), exclude 30 & 34
+            sql = """
+                SELECT subject_short 
+                FROM tbl_student_subjects 
+                WHERE (is_present=True OR subject_serial=31) 
+                AND subject_serial NOT IN (30,34)
+            """
+            console.print("[bold magenta]✓ Using OLD CURRICULUM (Form VI before July 2026)[/bold magenta]")
+            console.print("[yellow]  - Including subject 31 (GS) regardless of is_present[/yellow]")
+            console.print("[yellow]  - Excluding subjects 30 & 34[/yellow]")
+        else:
+            # New curriculum or other classes
+            sql = "SELECT subject_short FROM tbl_student_subjects WHERE is_present=True"
+            console.print("[bold cyan]✓ Using NEW CURRICULUM / Standard[/bold cyan]")
+        
+        df = pd.read_sql(sql, conn)
+        conn.close()
+        
+        curriculum_subjects = [s.lower() for s in df['subject_short'].tolist()]
+        console.print(f"[green]✓ Curriculum defines {len(curriculum_subjects)} subjects: {curriculum_subjects}[/green]")
+        
+        return curriculum_subjects
+    
     def get_grade(self, marks) -> str:
         """Convert numeric marks to letter grade using database boundaries."""
         if pd.isna(marks) or not isinstance(marks, (int, float)) or marks < 0 or marks > 100:
             return None
         
-        # Use grade boundaries from database - comparing only against lower bound
-        # Sorted by lower DESC, so we check from highest to lowest
         for _, row in self.grade_boundaries.iterrows():
             if marks >= row['lower']:
                 return row['grade']
         
-        # If no grade matched, return None (shouldn't happen if DB is configured correctly)
         return None
     
     @classmethod
@@ -137,27 +189,22 @@ class AlevelProcessor:
         """Display sample data in tabular form."""
         console.print("\n[bold magenta]Sample Data Preview (First 5 Students):[/bold magenta]")
         
-        # Select columns to display: student info + first few subjects (max 10 columns total)
         display_cols = ['student_id', 'full_name', 'sex', 'comb_id']
-        subject_cols = potential_subjects[:10]  # Show first 10 subjects
+        subject_cols = potential_subjects[:10]
         display_cols.extend(subject_cols)
         
         sample_df = self.df[display_cols].head(10)
         
-        # Create rich table
         table = Table(show_header=True, header_style="bold cyan", box=box.ROUNDED)
         
-        # Add columns
         for col in display_cols:
             table.add_column(col.upper(), style="white")
         
-        # Add rows
         for _, row in sample_df.iterrows():
             table.add_row(*[str(row[col]) if pd.notna(row[col]) else "-" for col in display_cols])
         
         console.print(table)
 
-    # PURE DISPLAY – NEVER TOUCHES OR CHANGES ANY DATA
     def _preview(self, title: str, cols: list, highlight=None, rows: int = 12):
         table = Table(title=f"[bold gold1 on #1e1b4b]{title}[/]", box=box.DOUBLE_EDGE, border_style="#7209b7", expand=True)
         for col in cols:
@@ -174,7 +221,6 @@ class AlevelProcessor:
         console.print("[bold magenta]              COMBINATION STRUCTURE DEBUG TABLE                        [/bold magenta]")
         console.print("[bold magenta]═══════════════════════════════════════════════════════════════════════[/bold magenta]")
         
-        # Get unique combinations from students
         student_combs = self.df['comb_id'].unique()
         
         table = Table(
@@ -198,19 +244,15 @@ class AlevelProcessor:
                 console.print(f" [red]⚠ Combination {comb_id} has NO subjects defined in metadata![/red]")
                 continue
             
-            # Separate core and elective
             core_subjects = comb_subjects[comb_subjects['is_core'] == True]
             elective_subjects = comb_subjects[comb_subjects['is_core'] == False]
             
-            # Build subject list with markers
             all_subs = []
             for _, row in comb_subjects.iterrows():
-                short = row['subject_short'].upper()
                 user = row['subject_user_short']
-                marker = "★" if row['is_core'] else "○"
+                marker = " ★ " if row['is_core'] else " ○ "
                 all_subs.append(f"{marker}{user}")
             
-            # Count students in this combination
             student_count = len(self.df[self.df['comb_id'] == str(comb_id)])
             
             table.add_row(
@@ -252,7 +294,6 @@ class AlevelProcessor:
             grade = str(row['grade'])
             description = str(row['description']) if pd.notna(row['description']) else ""
             
-            # Color code the grade based on performance
             if grade == 'A':
                 grade_style = "bold green"
             elif grade in ['B', 'C']:
@@ -321,7 +362,6 @@ class AlevelProcessor:
         
         console.print(table)
         
-        # Summary statistics
         console.print(f"\n[bold cyan]Summary:[/bold cyan]")
         console.print(f" - Total students with discrepancy: {len(discrepancy_df)}")
         console.print(f" - Average count: {discrepancy_df['subject_count'].mean():.2f}")
@@ -331,6 +371,14 @@ class AlevelProcessor:
     def detect_columns(self):
         """Detect available columns in the database."""
         console.print("\n[bold cyan]Stage 1: Connecting to Database and Detecting Columns[/bold cyan]")
+        
+        # Get class ID first
+        self.class_id = self.get_class_from_exam_id()
+        if self.class_id:
+            console.print(f"[green]✓ Detected class: {self.class_id}[/green]")
+        else:
+            console.print("[yellow]⚠ Class not detected - using standard curriculum[/yellow]")
+        
         conn = self.connect_db()
         
         dummy_query = "SELECT TOP 1 * FROM tbl_student_exam_results WHERE exam_id = ?"
@@ -340,19 +388,23 @@ class AlevelProcessor:
             df_dummy = pd.read_sql("SELECT TOP 1 * FROM tbl_student_exam_results", conn)
         
         self.db_columns = [col.lower() for col in df_dummy.columns]
-        potential_subjects = [sub for sub in self.SUBJECTS if sub in self.db_columns]
-        console.print(f" [green]- Detected {len(potential_subjects)} potential subject mark fields: {potential_subjects}[/green]")
+        
+        # Get curriculum-aware subjects
+        curriculum_subjects = self.get_valid_subjects_for_curriculum()
+        
+        # Only keep subjects that exist in BOTH curriculum AND database columns
+        potential_subjects = [sub for sub in curriculum_subjects if sub in self.db_columns]
+        console.print(f" [green]✓ Found {len(potential_subjects)} subjects in database: {potential_subjects}[/green]")
         
         if 'student_id' not in self.db_columns or 'exam_id' not in self.db_columns:
             conn.close()
             raise ValueError("Missing essential fields.")
         
-        # NEW: Load grade boundaries from database
+        # Load grade boundaries
         console.print("\n[bold cyan]- Loading grade boundaries from tbl_student_grades...[/bold cyan]")
         grade_query = "SELECT grade, lower, higher, description FROM tbl_student_grades ORDER BY lower DESC"
         self.grade_boundaries = pd.read_sql(grade_query, conn)
         
-        # Display grade boundaries table
         self._display_grade_boundaries()
         
         conn.close()
@@ -387,9 +439,7 @@ class AlevelProcessor:
         if self.df.empty:
             raise ValueError("No records found for this exam_id.")
         
-        # ORIGINAL DISPLAY KEPT
         self._display_sample_data(potential_subjects)
-        # EXTRA 12-ROW PREVIEW
         self._preview("RAW MARKS – First 12 Students", ['full_name','sex','comb_id'] + potential_subjects[:9], highlight=potential_subjects[:9])
     
     def filter_valid_subjects(self, potential_subjects):
@@ -404,7 +454,6 @@ class AlevelProcessor:
                 self.valid_subjects.append(sub)
             else:
                 removed_subjects.append(sub)
-                # DROP the column entirely - no use keeping it
                 self.df = self.df.drop(columns=[sub])
                 console.print(f" [red]✗ Subject {sub} has NO valid marks - REMOVED from dataset[/red]")
         
@@ -414,28 +463,85 @@ class AlevelProcessor:
         console.print(f" [green]✓ Retained {len(self.valid_subjects)} subjects with valid marks: {self.valid_subjects}[/green]")
         self._preview("VALID SUBJECT MARKS – First 12 Students", ['full_name'] + self.valid_subjects[:10], highlight=self.valid_subjects[:10])
     
+
     def load_metadata(self):
-        """Load combination and subject metadata."""
+        """Load combination and subject metadata with curriculum handling."""
         console.print("\n[bold cyan]Stage 3: Fetching Metadata for Combinations and Subjects[/bold cyan]")
         conn = self.connect_db()
         
-        comb_df = pd.read_sql("SELECT serial_id, comb_id, subject_id FROM tbl_student_comb_subjects", conn)
-        sub_df = pd.read_sql("SELECT subject_serial, subject_short, subject_user_short, is_core, is_present,subject_name FROM tbl_student_subjects", conn)
+        # Build query based on curriculum
+        if self.class_id == "VI" and datetime.now() < datetime(2026, 7, 1):
+            comb_sql = """
+                SELECT serial_id, comb_id, subject_id 
+                FROM tbl_student_comb_subjects 
+                WHERE subject_id NOT IN (30, 34)
+            """
+            sub_sql = """
+                SELECT subject_serial, subject_short, subject_user_short, is_core, is_present, subject_name 
+                FROM tbl_student_subjects 
+                WHERE (is_present=True OR subject_serial=31) 
+                AND subject_serial NOT IN (30, 34)
+            """
+            console.print("[magenta]Using OLD CURRICULUM metadata (excluding 30,34; including 31)[/magenta]")
+        else:
+            comb_sql = "SELECT serial_id, comb_id, subject_id FROM tbl_student_comb_subjects"
+            sub_sql = "SELECT subject_serial, subject_short, subject_user_short, is_core, is_present, subject_name FROM tbl_student_subjects"
         
+        comb_df = pd.read_sql(comb_sql, conn)
+        sub_df = pd.read_sql(sub_sql, conn)
         conn.close()
+        
         console.print(f" [green]- Loaded {len(comb_df)} comb-subject links and {len(sub_df)} subjects.[/green]")
         
         comb_metadata_all = comb_df.merge(sub_df, left_on='subject_id', right_on='subject_serial')
         self.comb_metadata = comb_metadata_all[comb_metadata_all['is_present'] == True]
-        self.subject_to_user = dict(zip(sub_df['subject_short'].str.lower(), sub_df['subject_user_short']))
         
+        # For Form VI old curriculum: Add gs(31) to EVERY combination
+        if self.class_id == "VI" and datetime.now() < datetime(2026, 7, 1):
+            sub31_rows = comb_metadata_all[comb_metadata_all['subject_serial'] == 31]
+            if not sub31_rows.empty:
+                self.comb_metadata = pd.concat([self.comb_metadata, sub31_rows]).drop_duplicates()
+            
+            # Get gs(31) info from sub_df
+            gs_info = sub_df[sub_df['subject_serial'] == 31]
+            if not gs_info.empty and 'gs' in self.valid_subjects:
+                unique_combs = comb_df['comb_id'].unique()
+                gs_rows_to_add = []
+                
+                for comb_id in unique_combs:
+                    existing = self.comb_metadata[
+                        (self.comb_metadata['comb_id'] == comb_id) & 
+                        (self.comb_metadata['subject_serial'] == 31)
+                    ]
+                    
+                    if existing.empty:
+                        new_row = {
+                            'serial_id': None,
+                            'comb_id': comb_id,
+                            'subject_id': 31,
+                            'subject_serial': 31,
+                            'subject_short': gs_info.iloc[0]['subject_short'],
+                            'subject_user_short': gs_info.iloc[0]['subject_user_short'],
+                            'is_core': False,
+                            'is_present': gs_info.iloc[0]['is_present'],
+                            'subject_name': gs_info.iloc[0]['subject_name']
+                        }
+                        gs_rows_to_add.append(new_row)
+                
+                if gs_rows_to_add:
+                    gs_df = pd.DataFrame(gs_rows_to_add)
+                    self.comb_metadata = pd.concat([self.comb_metadata, gs_df], ignore_index=True)
+                    console.print(f"[green]✓ Added GS(31) to {len(gs_rows_to_add)} combinations for Form VI old curriculum[/green]")
+        
+        # Store ALL subjects metadata for competency report
+        self.all_subjects_metadata = sub_df
+        self.subject_to_user = dict(zip(sub_df['subject_short'].str.lower(), sub_df['subject_user_short']))
         self.df['comb_id'] = self.df['comb_id'].astype(str)
         
-        # ============================================================
-        # NEW: DISPLAY COMBINATION STRUCTURE DEBUG TABLE
-        # ============================================================
         self._display_combination_structure()
-    
+
+
+
     def reset_computed_fields(self):
         """Reset all computed fields in the database."""
         console.print("\n[bold cyan]Stage 4: Resetting Computed Fields in DB[/bold cyan]")
@@ -467,6 +573,8 @@ class AlevelProcessor:
         self.df['total_marks'] = self.df[self.valid_subjects].sum(axis=1, skipna=True)
         console.print(" [green]- Grades computed successfully.[/green]")
         self._preview("LETTER GRADES – First 12 Students", ['full_name'] + [f"{s}_grade" for s in self.valid_subjects[:10]], highlight=[f"{s}_grade" for s in self.valid_subjects[:10]])
+    
+
     
     def build_necta(self, row):
         """Build NECTA results strings for a student row."""
@@ -513,37 +621,117 @@ class AlevelProcessor:
         row['necta_results'] = ', '.join(parts)
         row['necta_results_marks'] = ', '.join(parts_marks)
         return row
-    
+
     def process_student_row(self, row):
-        """Process a single student row to compute all metrics."""
+        """
+        Process a single student row to compute all metrics including division, points, and rankings.
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        CRITICAL UNDERSTANDING - CORE vs NON-CORE SUBJECTS
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        
+        ## COMBINATION STRUCTURE:
+        Each combination contains both CORE and NON-CORE subjects:
+        
+        Example - CBG Combination (Form VI Old Curriculum):
+        - CORE subjects (is_core=True):     BIO, CHE, GEO  ← Used for division/points
+        - NON-CORE subjects (is_core=False): BAM, GS       ← NOT used for division/points
+        
+        Example - HGK Combination:
+        - CORE subjects:     GEO, HIS, KIS
+        - NON-CORE subjects: GS (for Form VI old curriculum)
+        
+        ## SPECIAL CASE - Subject 31 (GS - General Studies):
+        - GS is a NON-CORE subject (is_core=False)
+        - GS has is_present=False in database (normally excluded)
+        - For Form VI BEFORE July 2026: GS is force-included despite is_present=False
+        - GS is part of the combination, NOT an extra subject
+        - Subjects 30 & 34 are excluded for Form VI old curriculum
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        WHAT CORE SUBJECTS ARE USED FOR:
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        ✅ Division calculation      - ONLY CORE subjects (3 best from combination cores)
+        ✅ Points calculation         - ONLY CORE subjects (sum of grade points)
+        ✅ First/Second/Third marks   - ONLY CORE subjects (top 3 core marks)
+        ✅ Completeness check         - ONLY CORE subjects (must have all 3+ cores)
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        WHAT NON-CORE SUBJECTS (like GS, BAM) ARE USED FOR:
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        ✅ Average marks calculation  - ALL subjects in combination (core + non-core)
+        ✅ subject_count_all          - ALL subjects in combination + extras with marks
+        ✅ subject_count              - ALL subjects student attempted
+        ✅ NECTA results string       - ALL subjects appear in results
+        ✅ Total marks                - ALL subjects contribute to sum
+        ✅ GPA calculation            - Denominator includes all attempted subjects
+        
+        ❌ Division/Points            - NON-CORE subjects are NEVER used here
+        ❌ First/Second/Third         - NON-CORE subjects are NEVER used here
+        ❌ Completeness check         - NON-CORE subjects are NEVER considered
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        EXAMPLE CALCULATION - Student ABIGAELI (CBG):
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        Marks:  BIO=8(F), CHE=82(A), GEO=48(E), BAM=74(B), GS=75(B)
+        
+        DIVISION/POINTS (CORE ONLY):
+        - Effective cores: [bio, che, geo]  ← Only these 3
+        - Grade points: F(7) + A(1) + E(5) = 13 points
+        - Division: 13 points = Division III
+        - First: 82, Second: 48, Third: 8  ← From cores only
+        
+        AVERAGE MARKS (ALL SUBJECTS):
+        - Total marks: 8 + 82 + 48 + 74 + 75 = 287
+        - Subject count all: 5 (all in combination: bio, che, geo, bam, gs)
+        - Average: 287/5 = 57.4 → Grade D
+        
+        NECTA RESULTS:
+        "CHEM-'A', BIOLOGY-'F', GEOG-'E', BAM-'B', GS-'B', AVG-57.4'D'"
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        INC/ABS HANDLING:
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        - ABS: Student attempted 0 core subjects → division='ABS', points=None
+        - INC: Student missing some cores OR has invalid grades
+            - if include_inc=True: division='INC', points=None (unless rank_incs=True)
+            - if include_inc=False: division='0' or 'IV', points=computed_points
+        - COMPLETE: All cores attempted with valid grades → normal division/points
+        
+        ═══════════════════════════════════════════════════════════════════════════════════════
+        """
+        
         student_comb = self.comb_metadata[self.comb_metadata['comb_id'] == row['comb_id']]
         comb_shorts = set(student_comb['subject_short'].str.lower())
         core_shorts = set(student_comb[student_comb['is_core'] == True]['subject_short'].str.lower())
         
-        effective_cores = core_shorts.union([sub for sub in self.valid_subjects if pd.notna(row.get(sub)) and sub not in comb_shorts])
+        # ═══════════════════════════════════════════════════════════════
+        # CRITICAL: Effective cores = ONLY declared core subjects in combination
+        # Non-core subjects (GS, BAM) are NEVER used for division/points
+        # ═══════════════════════════════════════════════════════════════
+        effective_cores = core_shorts  # CBG: [bio, che, geo] only - NO GS, NO BAM
+        
         attempted_effective = [sub for sub in effective_cores if pd.notna(row.get(sub))]
         missing_count = len(effective_cores) - len(attempted_effective)
         
-        # ============================================================
-        # FIXED LOGIC:
-        # subject_count_all = ALL subjects in combination (with OR without marks) + extra subjects with marks
-        # subject_count = ONLY subjects the student attempted (has marks for)
-        # ============================================================
+        # ═══════════════════════════════════════════════════════════════
+        # Subject counts: ALL subjects in combination (core + non-core)
+        # ═══════════════════════════════════════════════════════════════
+        all_in_comb = len(comb_shorts)  # CBG: 5 (bio, che, geo, bam, gs)
         
-        # Count ALL subjects in combination (regardless of marks)
-        all_in_comb = len(comb_shorts)
-        
-        # Count extra subjects NOT in combination but student has marks for
+        # Extra subjects NOT in combination but student has marks for
         attempted_extra = [sub for sub in self.valid_subjects 
-                          if pd.notna(row.get(sub)) and row.get(sub) >= 0 and sub not in comb_shorts]
+                        if pd.notna(row.get(sub)) and row.get(sub) >= 0 and sub not in comb_shorts]
         
-        # subject_count_all = all in combination + extras with marks
         row['subject_count_all'] = all_in_comb + len(attempted_extra)
         
-        # subject_count = ONLY subjects student actually attempted (has marks for)
+        # subject_count = ONLY subjects student actually attempted
         attempted_all = [sub for sub in self.valid_subjects if pd.notna(row.get(sub)) and row.get(sub) >= 0]
         row['subject_count'] = len(attempted_all)
         
+        # ═══════════════════════════════════════════════════════════════
+        # Average marks: uses ALL subjects (core + non-core + extras)
+        # ═══════════════════════════════════════════════════════════════
         if row['subject_count_all'] > 0:
             row['avg_marks'] = row['total_marks'] / row['subject_count_all']
             row['avg_grade'] = self.get_grade(row['avg_marks'])
@@ -551,28 +739,48 @@ class AlevelProcessor:
             row['avg_marks'] = None
             row['avg_grade'] = None
         
+        # ═══════════════════════════════════════════════════════════════
+        # First/Second/Third: ONLY from core subjects
+        # ═══════════════════════════════════════════════════════════════
         core_marks = sorted([row[sub] for sub in attempted_effective if pd.notna(row.get(sub))], reverse=True)
         row['first'] = core_marks[0] if len(core_marks) >= 1 else None
         row['second'] = core_marks[1] if len(core_marks) >= 2 else None
         row['third'] = core_marks[2] if len(core_marks) >= 3 else None
         
+        # ═══════════════════════════════════════════════════════════════
+        # Points: ONLY from core subjects
+        # ═══════════════════════════════════════════════════════════════
         grade_pts = [self.GRADE_POINTS.get(row.get(f'{sub}_grade')) for sub in attempted_effective]
         valid_pts = [p for p in grade_pts if p is not None]
         computed_points = sum(valid_pts) if valid_pts else None
         
         row['computed_points'] = computed_points
         
+        # ═══════════════════════════════════════════════════════════════
+        # Completeness: Based on CORE subjects only
+        # ═══════════════════════════════════════════════════════════════
         has_invalid = len(grade_pts) != len(valid_pts)
         is_complete = (len(effective_cores) >= 3 and missing_count == 0 and not has_invalid)
         is_abs = len(attempted_effective) == 0
         is_inc = not is_complete and not is_abs
         
+        # ═══════════════════════════════════════════════════════════════
+        # Division and Points Assignment
+        # ═══════════════════════════════════════════════════════════════
         if is_abs:
-            save_div = 'ABS' if self.include_inc else ('0' if self.get_div_from_points(7 * missing_count) == '0' else 'IV')
+            save_div = 'ABS' if self.include_inc else ('0' if self.get_div_from_points(7 * len(effective_cores)) == '0' else 'IV')
             save_points = None
+            
         elif is_inc:
-            save_div = 'INC' if self.include_inc else ('0' if self.get_div_from_points(sum(valid_pts) + 7 * missing_count) == '0' else 'IV')
-            save_points = None
+            penalty_points = sum(valid_pts) + 7 * missing_count if valid_pts else 7 * missing_count
+            
+            if self.include_inc:
+                save_div = 'INC'
+                save_points = computed_points if self.rank_incs and computed_points is not None else None
+            else:
+                save_div = '0' if self.get_div_from_points(penalty_points) == '0' else 'IV'
+                save_points = computed_points
+                
         else:
             save_div = self.get_div_from_points(computed_points)
             save_points = computed_points if save_div is not None else None
@@ -580,6 +788,9 @@ class AlevelProcessor:
         row['division'] = save_div
         row['points'] = save_points
         
+        # ═══════════════════════════════════════════════════════════════
+        # GPA: uses division value / subject_count
+        # ═══════════════════════════════════════════════════════════════
         div_val = self.DIVISION_VALUES.get(save_div)
         if div_val is not None and row['subject_count'] > 0:
             row['gpa'] = div_val / row['subject_count']
@@ -588,29 +799,20 @@ class AlevelProcessor:
         
         row = self.build_necta(row)
         return row
-    
+
+
+
     def process_all_students(self):
         """Process all student rows."""
         console.print("\n[bold cyan]Stage 6: Processing Each Student Row...[/bold cyan]")
-        # YOUR ORIGINAL LINE – ONLY .progress_apply() ADDED (tqdm.pandas() makes it work)
         self.df = self.df.progress_apply(self.process_student_row, axis=1)
         console.print(" [green]- All student rows processed.[/green]")
         self._preview("FINAL RESULTS – First 12 Students", ['full_name','division','points','gpa','first','second','third'], highlight=['division','points','gpa'])
         
-        # Display subject count discrepancy table
         self._display_subject_count_discrepancy()
 
-
-
     def compute_ranking(self):
-        """
-        Compute school-wide and combination-specific rankings with PROPER TIE HANDLING.
-        
-        Rankings use Olympic-style: tied students get same rank, next rank is skipped.
-        Example: If 3 students tie for rank 2, next student gets rank 5 (not rank 3).
-        
-        ✅ SYNCHRONIZED with StudentExamExporter to produce IDENTICAL rankings
-        """
+        """Compute school-wide and combination-specific rankings with PROPER TIE HANDLING."""
         console.print("\n[bold cyan]Stage 7: Computing Rankings[/bold cyan]")
         
         exam_df = self.df[self.df['exam_id'] == self.exam_id].copy()
@@ -618,15 +820,10 @@ class AlevelProcessor:
             console.print(" [yellow]- No exam data found[/yellow]")
             return
 
-        # ============================================================
-        # CRITICAL: IDENTICAL FILTERING LOGIC FOR BOTH FILES
-        # ============================================================
         print(f" [cyan]🔍 DEBUG: Total students before filtering: {len(exam_df):,}[/cyan]")
         
-        # Filter criteria MUST match StudentExamExporter exactly
         invalid_conditions = [(exam_df['division'] == 'ABS'), (exam_df['avg_marks'].isna())]
         
-        # Only exclude students with NaN points if rank_incs is False
         if not self.rank_incs:
             invalid_conditions.append(exam_df['points'].isna())
         
@@ -651,17 +848,12 @@ class AlevelProcessor:
         console.print(f" [green]✓ Found {len(valid_students):,} valid students to rank[/green]")
         console.print(f" [yellow]✓ Excluded {len(invalid_students):,} invalid students[/yellow]")
 
-        # ============================================================
-        # CRITICAL: IDENTICAL NaN HANDLING FOR BOTH FILES
-        # ============================================================
         console.print(f"\n[bold yellow]🔧 Preparing sort columns: {self.sort_columns}[/bold yellow]")
         
         for col in self.sort_columns:
             before_fill = valid_students[col].isna().sum()
             
             if col == 'points':
-                # If ranking incompletes, NaN points become worst (highest value) so they appear last when sorted ascending
-                # Otherwise, NaN points are excluded from ranking entirely
                 fill_value = 999999
                 valid_students[col] = valid_students[col].fillna(fill_value)
             elif col == 'avg_marks':
@@ -672,48 +864,37 @@ class AlevelProcessor:
             after_fill = valid_students[col].isna().sum()
             console.print(f" [cyan]- {col}: filled {before_fill} NaN values → {after_fill} remaining[/cyan]")
         
-        # ⚠️ CRITICAL: Round to 4 decimal places to avoid floating point comparison issues
         for col in ['points', 'avg_marks']:
             if col in valid_students.columns:
                 valid_students[col] = valid_students[col].round(4)
                 console.print(f" [cyan]- {col}: rounded to 4 decimal places[/cyan]")
 
-        # ============================================================
-        # SCHOOL-WIDE RANKING (IDENTICAL TO EXPORTER)
-        # ============================================================
         console.print(f"\n[bold yellow]🏆 School-Wide Ranking[/bold yellow]")
         console.print(f" [cyan]- Sort criteria: {list(zip(self.sort_columns, ['↑ ASC' if asc else '↓ DESC' for asc in self.sort_ascending]))}[/cyan]")
         
-        # STEP 1: Sort by configured columns
         valid_students_sorted = valid_students.sort_values(
             by=self.sort_columns,
             ascending=self.sort_ascending
         ).copy()
         
-        # STEP 2: Create sort tuple AFTER sorting (preserves sort order)
         valid_students_sorted['_sort_tuple'] = valid_students_sorted[self.sort_columns].apply(
             lambda row: tuple(row), axis=1
         )
         
-        # STEP 3: Get unique tuples in sorted order
         unique_tuples = valid_students_sorted['_sort_tuple'].unique()
         console.print(f" [cyan]🔍 DEBUG: Found {len(unique_tuples):,} unique performance levels[/cyan]")
         
-        # STEP 4: Map each unique tuple to its rank
         rank_map = {tuple_val: idx + 1 for idx, tuple_val in enumerate(unique_tuples)}
         
-        # STEP 5: Assign ranks
         valid_students_sorted['position_school'] = valid_students_sorted['_sort_tuple'].map(rank_map)
         valid_students_sorted['out_of_school'] = len(valid_students_sorted)
         
-        # Validation
         max_rank = valid_students_sorted['position_school'].max()
         num_unique = len(unique_tuples)
         console.print(f" [green]✓ Ranked {len(valid_students_sorted):,} students[/green]")
         console.print(f" [green]✓ Unique performance levels: {num_unique:,}[/green]")
         console.print(f" [green]✓ Highest rank assigned: {max_rank}[/green]")
         
-        # Count ties
         rank_counts = valid_students_sorted['position_school'].value_counts()
         ties = rank_counts[rank_counts > 1]
         if len(ties) > 0:
@@ -724,7 +905,6 @@ class AlevelProcessor:
         else:
             console.print(f" [green]✓ No ties detected (all students have unique ranks)[/green]")
         
-        # 🔍 DEBUG: Export first 20 students for verification
         debug_df = valid_students_sorted.head(20)[['student_id', 'full_name', 'points', 'avg_marks', 
                                                     'subject_count_all', '_sort_tuple', 'position_school']]
         console.print(f"\n[bold magenta]🔍 DEBUG: First 20 ranked students (for verification)[/bold magenta]")
@@ -732,9 +912,6 @@ class AlevelProcessor:
             console.print(f" {row['position_school']:3d}. {row['student_id']:15s} | "
                         f"pts:{row['points']:6.2f} avg:{row['avg_marks']:6.2f} cnt:{row['subject_count_all']:2.0f}")
         
-        # ============================================================
-        # COMBINATION-SPECIFIC RANKING (IDENTICAL TO EXPORTER)
-        # ============================================================
         console.print(f"\n[bold yellow]📚 Combination-Specific Ranking[/bold yellow]")
         
         def rank_within_combination(group):
@@ -757,42 +934,30 @@ class AlevelProcessor:
         num_combs = ranked_df['comb_id'].nunique()
         console.print(f" [green]✓ Ranked students within {num_combs} combinations[/green]")
         
-        # ============================================================
-        # WRITE BACK TO MAIN DATAFRAME
-        # ============================================================
         rank_cols = ['position_school', 'out_of_school', 'position_comb', 'out_of_comb']
         self.df.loc[ranked_df.index, rank_cols] = ranked_df[rank_cols]
         
         if not invalid_students.empty:
             self.df.loc[invalid_students.index, rank_cols] = pd.NA
         
-        # ============================================================
-        # CRITICAL VALIDATION: VERIFY RANKING INTEGRITY
-        # ============================================================
         console.print(f"\n[bold magenta]🔍 Validation Checks[/bold magenta]")
         
-        # Check 1: No rank exceeds student count
         if ranked_df['position_school'].max() > len(ranked_df):
             console.print(" [red]✗ ERROR: position_school exceeds total students![/red]")
         else:
             console.print(" [green]✓ School ranks within valid range[/green]")
         
-        # Check 2: First student has rank 1
         first_student = ranked_df.iloc[0]
         if first_student['position_school'] != 1:
             console.print(f" [red]✗ ERROR: First student has rank {first_student['position_school']} (should be 1)[/red]")
         else:
             console.print(" [green]✓ First student has rank 1[/green]")
         
-        # Check 3: No missing ranks in sequence (except for ties)
         all_ranks = sorted(ranked_df['position_school'].unique())
         expected_max = len(all_ranks)
         actual_max = all_ranks[-1]
         console.print(f" [cyan]- Rank sequence: 1 to {actual_max} ({expected_max} unique values)[/cyan]")
         
-        # ============================================================
-        # DISPLAY TOP/BOTTOM STUDENTS
-        # ============================================================
         preview_cols = ['full_name', 'comb_id', 'division', 'points', 'avg_marks', 'subject_count_all',
                         'position_school', 'out_of_school', 'position_comb', 'out_of_comb']
         
@@ -816,7 +981,6 @@ class AlevelProcessor:
         
         console.print("\n[bold green]✅ Ranking complete with synchronized logic![/bold green]")
 
-
     def compute_subject_rankings(self):
         """Compute per-subject rankings."""
         for sub in tqdm(self.valid_subjects, desc="Ranking subjects"):
@@ -835,31 +999,28 @@ class AlevelProcessor:
             self.df.loc[sub_df.index, [pos_col, out_col]] = sub_df[[pos_col, out_col]]
     
     def finalize_data_types(self):
-            """Finalize data types for all fields."""
-            console.print("\n[bold cyan]Stage 9: Finalizing Data Types and Updating DB[/bold cyan]")
-            
-            int_fields = ['position_school', 'position_comb', 'out_of_school', 'out_of_comb',
-                        'first', 'second', 'third', 'points', 'subject_count', 'subject_count_all'] + \
-                        [f"{sub}_pos" for sub in self.valid_subjects] + [f"{sub}_out_of" for sub in self.valid_subjects]
-            
-            for field in int_fields:
-                if field in self.df.columns:
-                    # Convert to numeric first, then to float64, round, then convert to Int64
-                    # This handles both regular floats and extension arrays safely
-                    numeric_series = pd.to_numeric(self.df[field], errors='coerce')
-                    self.df[field] = numeric_series.astype('float64').round().astype('Int64')
-            
-            if 'gpa' in self.df.columns:
-                self.df['gpa'] = pd.to_numeric(self.df['gpa'], errors='coerce').round(4)
-            
-            # Also round avg_marks if it exists
-            if 'avg_marks' in self.df.columns:
-                self.df['avg_marks'] = pd.to_numeric(self.df['avg_marks'], errors='coerce').round(4)
-            
-            if 'computed_points' in self.df.columns:
-                self.df = self.df.drop(columns=['computed_points'])
-            
-            console.print(" [green]- Data types finalized.[/green]")
+        """Finalize data types for all fields."""
+        console.print("\n[bold cyan]Stage 9: Finalizing Data Types and Updating DB[/bold cyan]")
+        
+        int_fields = ['position_school', 'position_comb', 'out_of_school', 'out_of_comb',
+                    'first', 'second', 'third', 'points', 'subject_count', 'subject_count_all'] + \
+                    [f"{sub}_pos" for sub in self.valid_subjects] + [f"{sub}_out_of" for sub in self.valid_subjects]
+        
+        for field in int_fields:
+            if field in self.df.columns:
+                numeric_series = pd.to_numeric(self.df[field], errors='coerce')
+                self.df[field] = numeric_series.astype('float64').round().astype('Int64')
+        
+        if 'gpa' in self.df.columns:
+            self.df['gpa'] = pd.to_numeric(self.df['gpa'], errors='coerce').round(4)
+        
+        if 'avg_marks' in self.df.columns:
+            self.df['avg_marks'] = pd.to_numeric(self.df['avg_marks'], errors='coerce').round(4)
+        
+        if 'computed_points' in self.df.columns:
+            self.df = self.df.drop(columns=['computed_points'])
+        
+        console.print(" [green]- Data types finalized.[/green]")
     
     def update_database(self):
         """Update database with computed results."""
@@ -893,18 +1054,15 @@ class AlevelProcessor:
         conn.close()
         console.print("\n[bold green]✓ All updates committed to DB. Process complete.[/bold green]")
         
-        # ORIGINAL FINAL SUMMARY KEPT
         self._display_final_summary()
     
     def _display_final_summary(self):
         """Display final results summary."""
         console.print("\n[bold magenta]Final Results Summary (Top 5 Students):[/bold magenta]")
         
-        # Select top 5 students and relevant columns
         summary_cols = ['student_id', 'full_name', 'division', 'points', 'avg_marks', 
                         'position_school', 'subject_count']
         
-        # Get valid students only
         valid_df = self.df[self.df['division'] != 'ABS'].copy()
         if valid_df.empty:
             console.print("[yellow]No valid students to display.[/yellow]")
@@ -912,7 +1070,6 @@ class AlevelProcessor:
         
         top_students = valid_df.nsmallest(5, 'position_school')[summary_cols]
         
-        # Create rich table
         table = Table(show_header=True, header_style="bold green", box=box.DOUBLE)
         
         for col in summary_cols:
@@ -926,13 +1083,10 @@ class AlevelProcessor:
         
         console.print(table)
         
-        # Division distribution
         console.print("\n[bold yellow]Division Distribution:[/bold yellow]")
         div_counts = self.df['division'].value_counts().sort_index()
         for div, count in div_counts.items():
             console.print(f"  {div}: {count} students")
-
-
 
     @staticmethod
     def get_competency_level(gpa):
@@ -947,7 +1101,6 @@ class AlevelProcessor:
         if 5.5 <= gpa <= 6.4999:   return "Grade S (Poor)"
         if 6.5 <= gpa <= 7.0:      return "Grade F (Fail)"
         return None
-
 
     def update_and_display_competency(self):
         console.print("\n[bold cyan]Processing Subject Competency Report[/bold cyan]")
@@ -970,7 +1123,6 @@ class AlevelProcessor:
         records = []
         rows = []
 
-        # Initialize totals
         total_A = total_B = total_C = total_D = total_E = total_S = total_F = 0
         total_students = 0
         total_gpa = 0
@@ -986,14 +1138,17 @@ class AlevelProcessor:
             gpa = (A*1+B*2+C*3+D*4+E*5+S*6+F*7) / total
             level = self.get_competency_level(gpa)
 
-            meta = self.comb_metadata[self.comb_metadata['subject_short'].str.lower() == sub]
-            if meta.empty: continue
+            # Use all_subjects_metadata instead of comb_metadata
+            meta = self.all_subjects_metadata[self.all_subjects_metadata['subject_short'].str.lower() == sub]
+            if meta.empty: 
+                console.print(f"[red]⚠ Skipping {sub} - not found in metadata[/red]")
+                continue
+            
             name = meta.iloc[0]['subject_name'].upper()
             serial = int(meta.iloc[0]['subject_serial'])
 
             records.append((str(self.exam_id), serial, A,B,C,D,E,S,F, total, A+B+C+D+E, S+F, round(gpa,4), level))
             
-            # Find background color for this row's competency level
             bg = None
             for (lo, hi), color in GPA_COLORS.items():
                 if lo <= gpa <= hi:
@@ -1005,7 +1160,6 @@ class AlevelProcessor:
                 'total': total, 'gpa': gpa, 'level': level, 'bg_color': bg
             })
 
-            # Accumulate totals
             total_A += A
             total_B += B
             total_C += C
@@ -1029,7 +1183,6 @@ class AlevelProcessor:
 
         table = Table(title=f"[bold white on #1e1b4b] SUBJECT COMPETENCY REPORT – {self.exam_id} [/]", box=box.DOUBLE_EDGE, expand=True)
 
-        # Normal columns
         table.add_column("SUBJECT", justify="left", style="cyan")
         table.add_column("A", justify="center")
         table.add_column("B", justify="center")
@@ -1045,7 +1198,6 @@ class AlevelProcessor:
         table.add_column("COMPETENCY LEVEL", justify="center")
 
         for r in rows:
-            # Create styled text ONLY for competency level cell if bg_color exists
             if r['bg_color']:
                 competency_cell = Text(r['level'] or "N/A", style=f"bold white on {r['bg_color']}")
             else:
@@ -1067,7 +1219,6 @@ class AlevelProcessor:
                 competency_cell
             )
 
-        # Add totals/average row
         total_pass = total_A + total_B + total_C + total_D + total_E
         total_fail = total_S + total_F
         avg_gpa = total_gpa / len(rows) if rows else 0
@@ -1090,7 +1241,6 @@ class AlevelProcessor:
 
         console.print(table)
         console.print(f" [bold green]Done — {len(records)} subjects[/bold green]")
-
 
 
     def run(self):
@@ -1116,20 +1266,9 @@ class AlevelProcessor:
 
 # Usage example:
 if __name__ == "__main__":
-    # Default sorting: points, avg_marks, subject_count
     processor = AlevelProcessor(
         exam_id='ANN520250526',
         db_path=r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb",
         include_inc=True,
-        # sort_columns=['points', 'avg_marks', 'subject_count']
     )
     processor.run()
-    
-    # Custom sorting example: prioritize avg_marks first
-    # processor = AlevelProcessor(
-    #     exam_id='ANN520250526',
-    #     db_path=r"C:\Users\droge\OneDrive\Documents\Kiyabo App Backend v4.0.0.accdb",
-    #     sort_columns=['avg_marks', 'points', 'subject_count'],
-    #     include_inc=True
-    # )
-    # processor.run()

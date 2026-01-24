@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Literal
 from .banner import print_banner
+from .footer import print_footer
 from .colors import console
 
 # IMPORT ONLY WHAT EXISTS IN YOUR ORIGINAL FILES
@@ -49,6 +50,8 @@ def test(level: Level = typer.Argument(..., help="School level")):
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 @app.command()
 def upload(
@@ -57,7 +60,10 @@ def upload(
     excel_path: str = typer.Option(..., "--excel"),
     db_path: str = typer.Option(r"C:\Kiyabo App\backend\Kiyabo App Backend v4.0.0.accdb", "--db"),
     process_after: bool = typer.Option(False, "--process", is_flag=True, help="Process after completion"),
-    sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)")
+    sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
+    include_inc: bool = typer.Option(True, "--inc/--no-inc", help="Include incomplete students in processing"),
+    rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking"),
+    ranking_method: str = typer.Option("min", "--ranking-method", help="Ranking method: min, max, average, dense, first (applies to both O-Level and A-Level)")
     ):
     print_banner()
     try:
@@ -68,7 +74,11 @@ def upload(
             console.print("[green]UPLOAD SUCCESS[/]" if success else "[red]UPLOAD FAILED[/]")
             if success and process_after:
                 processor = AlevelProcessor(exam_id=exam_id, 
-                            db_path=db_path, sort_columns=[col.strip() for col in sort_columns.split(",")] if sort_columns else None,
+                            db_path=db_path, 
+                            sort_columns=[col.strip() for col in sort_columns.split(",")] if sort_columns else None,
+                            include_inc=include_inc,
+                            rank_incs=rank_incs,
+                            rank_method=ranking_method
                             )
                 processor.run()
                 console.print("[green]PROCESSING COMPLETE[/]")
@@ -77,12 +87,29 @@ def upload(
             importer = OlevelResultImporter(exam_id=exam_id,excel_file=excel_path,db_path=db_path,force_import=True,process_after=process_after)
             importer.run()
             console.print("[green]UPLOAD COMPLETE[/]")
+            if process_after:
+                # Process the uploaded data with the provided options
+                from .olevel.processDS import OlevelProcessor
+                sort_cols_list = [col.strip() for col in sort_columns.split(",")] if sort_columns else None
+                processor = OlevelProcessor(
+                    exam_id=exam_id, 
+                    db_path=db_path,
+                    sort_columns=sort_cols_list,
+                    include_inc=include_inc,
+                    flat_rate=False,  # Default value, could be made configurable if needed
+                    rank_incs=rank_incs,
+                    base_subjects=7,  # Default value, could be made configurable if needed
+                    update_competency=True,  # Default value, could be made configurable if needed
+                    ranking_method=ranking_method
+                )
+                processor.run()
+                console.print("[green]PROCESSING COMPLETE[/]")
         
         elif level == "primary":
             importer=PrimaryResultImporter(db_path=db_path,excel_path=excel_path,exam_id=exam_id)
             success=importer.run()
             if success and process_after:
-                processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
+                processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id, include_necta_total=include_necta)
                 try:
                     processor.complete_exam()
                 except Exception as e:
@@ -99,6 +126,8 @@ def upload(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 
@@ -136,6 +165,8 @@ def import_(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 
@@ -177,6 +208,8 @@ def export(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 @app.command()
 def process(
@@ -252,6 +285,8 @@ def process(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context):
@@ -286,6 +321,8 @@ def run(file_path: str, args: List[str] = typer.Argument(None)):
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -309,6 +346,8 @@ def python(args: List[str] = typer.Argument(None)):
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -332,6 +371,8 @@ def pip(args: List[str] = typer.Argument(None)):
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 @app.command(name='future')
@@ -379,6 +420,8 @@ def future_from_antique(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 @app.command("sendsms")
@@ -409,6 +452,8 @@ def bulk_sms(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
 
 
 
@@ -480,6 +525,8 @@ def combine(
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
         raise typer.Exit(1)
+    finally:
+        print_footer()
     
 
 if __name__ == "__main__":

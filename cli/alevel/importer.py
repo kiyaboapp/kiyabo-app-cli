@@ -4,8 +4,8 @@ from tqdm import tqdm
 import time
 import argparse
 import re
+from datetime import datetime
 from tabulate import tabulate
-# from ranking import process_examxxx
 
 class Colors:
     RED = '\033[91m'
@@ -39,8 +39,8 @@ class ExamDataImporter:
         except (ValueError, TypeError):
             return False
 
-    def get_subject_ids(self, db_path, use_subject_shorts_instead=False, is_for_display=False, table_name="tbl_student_subjects"):
-        """EXACT Python conversion of VBA GetSubjectIDs function"""
+    def get_subject_ids(self, db_path, use_subject_shorts_instead=False, is_for_display=False, table_name="tbl_student_subjects", class_id=""):
+        """Python conversion of VBA GetSubjectIDs function with curriculum handling"""
 
         def val(s):
             """VBA-like Val()"""
@@ -68,10 +68,23 @@ class ExamDataImporter:
             self.conn = pyodbc.connect(conn_str)
             self.cursor = self.conn.cursor()
             
-            sql = f"SELECT subject_serial, subject_short, is_present, is_core, sorter, subject_short_display FROM {table_name} WHERE is_present=True"
+            # Build SQL based on curriculum
+            sql = f"SELECT subject_serial, subject_short, is_present, is_core, sorter, subject_short_display FROM {table_name} WHERE "
+            
+            # Form VI old curriculum: include subject 31 regardless of is_present, exclude 30 & 34
+            if class_id == "VI" and datetime.now() < datetime(2026, 7, 1):
+                sql += "(is_present=True OR subject_serial=31) AND subject_serial NOT IN (30,34)"
+            else:
+                # New curriculum or other classes: normal behavior
+                sql += "is_present=True"
+            
             self.cursor.execute(sql)
             results = self.cursor.fetchall()
             total_subjects = len(results)
+            
+            if total_subjects == 0:
+                print(f"{Colors.RED}No subjects found!{Colors.END}")
+                return []
             
             subject_data = [[None] * 4 for _ in range(total_subjects)]
             
@@ -111,16 +124,97 @@ class ExamDataImporter:
                         subject_data[j] = temp
             
             subject_ids = [subject_data[i][0] for i in range(total_subjects)]
+            
             return subject_ids
             
         except Exception as e:
-            print(f"Database Error: {str(e)}")
+            print(f"{Colors.RED}Database Error: {str(e)}{Colors.END}")
+            import traceback
+            traceback.print_exc()
             return []
         finally:
             if getattr(self, "cursor", None):
                 self.cursor.close()
             if getattr(self, "conn", None):
                 self.conn.close()
+
+    def get_class_from_exam_id(self, db_path, exam_id):
+        """Extract class ID from exam record in database"""
+        try:
+            conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};"
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            
+            sql = "SELECT class_id FROM tbl_exams WHERE exam_id = ?"
+            cursor.execute(sql, (exam_id,))
+            result = cursor.fetchone()
+            
+            cursor.close()
+            conn.close()
+            
+            if result:
+                return result[0]
+            return ""
+            
+        except Exception as e:
+            # Try to extract class from exam_id format (e.g., "MID620260124" -> "VI")
+            if exam_id and len(exam_id) >= 4:
+                # Check if exam_id contains VI or V pattern
+                if 'VI' in exam_id.upper():
+                    extracted = 'VI'
+                elif exam_id[3:5] == '62':  # Form VI pattern in your system
+                    extracted = 'VI'
+                elif exam_id[3:5] == '61':  # Form V pattern
+                    extracted = 'V'
+                else:
+                    extracted = ''
+                
+                if extracted:
+                    return extracted
+            
+            return ""
+
+    def check_existing_results(self, db_path, exam_id):
+        """Check if results already exist for this exam_id"""
+        try:
+            conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};"
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            
+            sql = "SELECT COUNT(*) FROM tbl_student_exam_results WHERE exam_id = ?"
+            cursor.execute(sql, (exam_id,))
+            result = cursor.fetchone()
+            count = result[0] if result else 0
+            
+            cursor.close()
+            conn.close()
+            
+            return count
+            
+        except Exception as e:
+            print(f"{Colors.YELLOW}[DEBUG] Could not check existing results: {str(e)}{Colors.END}")
+            return 0
+
+    def delete_existing_results(self, db_path, exam_id):
+        """Delete all existing results for this exam_id"""
+        try:
+            conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};"
+            conn = pyodbc.connect(conn_str)
+            cursor = conn.cursor()
+            
+            sql = "DELETE FROM tbl_student_exam_results WHERE exam_id = ?"
+            cursor.execute(sql, (exam_id,))
+            deleted_count = cursor.rowcount
+            conn.commit()
+            
+            cursor.close()
+            conn.close()
+            
+            return deleted_count
+            
+        except Exception as e:
+            print(f"{Colors.RED}Error deleting existing results: {str(e)}{Colors.END}")
+            return -1
 
     def show_modern_data_preview(self, df, subject_ids):
         """Modern table display for data preview"""
@@ -285,21 +379,61 @@ class ExamDataImporter:
             print(f"\n{Colors.CYAN}Overall average: {overall_color}{overall_avg:.2f}{Colors.CYAN} | Total marks entered: {Colors.WHITE}{marks_count}{Colors.END}")
 
     def import_exam_data(self, exam_id, excel_path, db_path):
-        """Main import function - EXACT SAME LOGIC, just better display"""
+        """Main import function with curriculum handling"""
         try:
             self.print_header("EXAM DATA IMPORT")
             print(f"{Colors.WHITE}Exam ID: {exam_id}{Colors.END}")
             print(f"{Colors.WHITE}Excel: {excel_path}{Colors.END}")
             print(f"{Colors.WHITE}Database: {db_path}{Colors.END}")
 
-            # Read Excel - EXACT SAME
+            # Check for existing results
+            self.print_subheader("CHECKING EXISTING RESULTS")
+            existing_count = self.check_existing_results(db_path, exam_id)
+            
+            if existing_count > 0:
+                print(f"{Colors.RED}⚠ WARNING: Found {existing_count} existing records for exam ID '{exam_id}'{Colors.END}")
+                print(f"{Colors.YELLOW}These records will need to be deleted before importing new data.{Colors.END}")
+                print(f"\n{Colors.CYAN}Options:{Colors.END}")
+                print(f"  {Colors.GREEN}[D]{Colors.END} Delete existing records and continue with import")
+                print(f"  {Colors.RED}[Q]{Colors.END} Quit without importing")
+                
+                choice = input(f"\n{Colors.BOLD}Your choice (D/Q): {Colors.END}").strip().upper()
+                
+                if choice == 'Q':
+                    print(f"\n{Colors.YELLOW}Import cancelled by user.{Colors.END}")
+                    return False
+                elif choice == 'D':
+                    print(f"\n{Colors.YELLOW}Deleting existing records...{Colors.END}")
+                    deleted = self.delete_existing_results(db_path, exam_id)
+                    if deleted >= 0:
+                        print(f"{Colors.GREEN}✓ Deleted {deleted} existing records{Colors.END}")
+                    else:
+                        print(f"{Colors.RED}✗ Failed to delete existing records{Colors.END}")
+                        return False
+                else:
+                    print(f"\n{Colors.RED}Invalid choice. Import cancelled.{Colors.END}")
+                    return False
+            else:
+                print(f"{Colors.GREEN}✓ No existing records found for this exam ID{Colors.END}")
+
+            # Get class ID from exam
+            self.print_subheader("DETERMINING CLASS/CURRICULUM")
+            class_id = self.get_class_from_exam_id(db_path, exam_id)
+            if class_id:
+                print(f"{Colors.GREEN}✓ Class: {class_id}{Colors.END}")
+                if class_id == "VI" and datetime.now() < datetime(2026, 7, 1):
+                    print(f"{Colors.MAGENTA}✓ Old curriculum mode (Form VI before July 2026){Colors.END}")
+            else:
+                print(f"{Colors.YELLOW}⚠ Class not detected - using standard curriculum{Colors.END}")
+
+            # Read Excel
             self.print_subheader("READING EXCEL FILE")
             df = pd.read_excel(excel_path, header=None, skiprows=13, engine='openpyxl')
             print(f"{Colors.GREEN}✓ Loaded {len(df)} student records{Colors.END}")
 
-            # Get subjects with EXACT VBA sorting - EXACT SAME
+            # Get subjects with curriculum handling
             self.print_subheader("GETTING SUBJECTS FROM DATABASE")
-            subject_ids = self.get_subject_ids(db_path, use_subject_shorts_instead=True)
+            subject_ids = self.get_subject_ids(db_path, use_subject_shorts_instead=True, class_id=class_id)
             if not subject_ids:
                 return False
             print(f"{Colors.GREEN}✓ Subjects ({len(subject_ids)}): {subject_ids}{Colors.END}")
@@ -307,7 +441,7 @@ class ExamDataImporter:
             # Show modern preview
             self.show_modern_data_preview(df, subject_ids)
 
-            # Prepare data - EXACT SAME LOGIC
+            # Prepare data
             self.print_subheader("PREPARING IMPORT DATA")
             import_data = []
             for idx in range(len(df)):
@@ -324,13 +458,13 @@ class ExamDataImporter:
                 
                 import_data.append(record)
 
-            # Show modern insert preview (10 records with ALL subjects, names, and combinations)
+            # Show modern insert preview
             self.show_modern_insert_preview(df, import_data, subject_ids)
 
-            # REMOVED CONFIRMATION PROMPT - Auto proceed
+            # Auto proceed
             print(f"\n{Colors.GREEN}🚀 Auto-proceeding with import...{Colors.END}")
 
-            # Import to database - EXACT SAME LOGIC
+            # Import to database
             self.print_subheader("IMPORTING TO DATABASE")
             conn_str = f"DRIVER={{Microsoft Access Driver (*.mdb, *.accdb)}};DBQ={db_path};"
             self.conn = pyodbc.connect(conn_str)
@@ -367,6 +501,8 @@ class ExamDataImporter:
 
         except Exception as e:
             print(f"{Colors.RED}Import failed: {str(e)}{Colors.END}")
+            import traceback
+            traceback.print_exc()
             return False
         finally:
             if self.cursor:
@@ -387,7 +523,7 @@ def main():
     
     if success:
         print(f"\n{Colors.GREEN}{Colors.BOLD}COMPLETED SUCCESSFULLY{Colors.END}")
-        # process_exam(args.exam_id,args.db_path)
+        # process_exam(args.exam_id, args.db_path)
     else:
         print(f"\n{Colors.RED}{Colors.BOLD}FAILED{Colors.END}")
 
