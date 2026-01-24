@@ -82,24 +82,26 @@ class AlevelProcessor:
         self.comb_metadata = None
         self.subject_to_user = {}
         self.db_columns = []
+        self.grade_boundaries = None  # NEW: Will hold grade boundaries from database
         
     @staticmethod
     def bracket_field(field: str) -> str:
         """Wrap field name in brackets for SQL queries."""
         return f"[{field}]"
     
-    @staticmethod
-    def get_grade(marks) -> str:
-        """Convert numeric marks to letter grade."""
+    def get_grade(self, marks) -> str:
+        """Convert numeric marks to letter grade using database boundaries."""
         if pd.isna(marks) or not isinstance(marks, (int, float)) or marks < 0 or marks > 100:
             return None
-        if marks >= 80: return 'A'
-        elif marks >= 70: return 'B'
-        elif marks >= 60: return 'C'
-        elif marks >= 50: return 'D'
-        elif marks >= 40: return 'E'
-        elif marks >= 35: return 'S'
-        else: return 'F'
+        
+        # Use grade boundaries from database - comparing only against lower bound
+        # Sorted by lower DESC, so we check from highest to lowest
+        for _, row in self.grade_boundaries.iterrows():
+            if marks >= row['lower']:
+                return row['grade']
+        
+        # If no grade matched, return None (shouldn't happen if DB is configured correctly)
+        return None
     
     @classmethod
     def get_div_from_points(cls, points) -> str:
@@ -225,6 +227,53 @@ class AlevelProcessor:
         console.print("[yellow]Note: subject_count_all = ALL subjects in combination (with/without marks) + Extra subjects with marks[/yellow]")
         console.print("[yellow]      subject_count = ONLY subjects the student attempted (has marks for)[/yellow]\n")
     
+    def _display_grade_boundaries(self):
+        """Display the grade boundaries table loaded from database."""
+        console.print("\n[bold magenta]═══════════════════════════════════════════════════════════════════════[/bold magenta]")
+        console.print("[bold magenta]                    GRADE BOUNDARIES TABLE                             [/bold magenta]")
+        console.print("[bold magenta]═══════════════════════════════════════════════════════════════════════[/bold magenta]")
+        
+        table = Table(
+            box=box.DOUBLE_EDGE,
+            border_style="green",
+            expand=True,
+            title="[bold white on #1e1b4b] GRADING SYSTEM CONFIGURATION [/]"
+        )
+        
+        table.add_column("GRADE", style="bold yellow", justify="center", width=10)
+        table.add_column("LOWER\nBOUND", style="bold cyan", justify="center", width=10)
+        table.add_column("UPPER\nBOUND", style="bold cyan", justify="center", width=10)
+        table.add_column("MARK RANGE", style="bold white", justify="center", width=15)
+        table.add_column("DESCRIPTION", style="white", justify="left")
+        
+        for _, row in self.grade_boundaries.iterrows():
+            lower = int(row['lower']) if pd.notna(row['lower']) else 0
+            higher = int(row['higher']) if pd.notna(row['higher']) else 100
+            grade = str(row['grade'])
+            description = str(row['description']) if pd.notna(row['description']) else ""
+            
+            # Color code the grade based on performance
+            if grade == 'A':
+                grade_style = "bold green"
+            elif grade in ['B', 'C']:
+                grade_style = "bold cyan"
+            elif grade in ['D', 'E']:
+                grade_style = "bold yellow"
+            else:
+                grade_style = "bold red"
+            
+            table.add_row(
+                Text(grade, style=grade_style),
+                str(lower),
+                str(higher),
+                f"{lower} - {higher}",
+                description
+            )
+        
+        console.print(table)
+        console.print(f"\n[green]✓ Loaded {len(self.grade_boundaries)} grade boundaries from database[/green]")
+        console.print("[cyan]Note: Grading uses LOWER bound only (marks >= lower)[/cyan]\n")
+    
     def _display_subject_count_discrepancy(self):
         """Display students where subject_count_all differs from subject_count."""
         console.print("\n[bold yellow]Subject Count Discrepancy Analysis[/bold yellow]")
@@ -297,6 +346,14 @@ class AlevelProcessor:
         if 'student_id' not in self.db_columns or 'exam_id' not in self.db_columns:
             conn.close()
             raise ValueError("Missing essential fields.")
+        
+        # NEW: Load grade boundaries from database
+        console.print("\n[bold cyan]- Loading grade boundaries from tbl_student_grades...[/bold cyan]")
+        grade_query = "SELECT grade, lower, higher, description FROM tbl_student_grades ORDER BY lower DESC"
+        self.grade_boundaries = pd.read_sql(grade_query, conn)
+        
+        # Display grade boundaries table
+        self._display_grade_boundaries()
         
         conn.close()
         return potential_subjects
