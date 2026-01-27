@@ -49,6 +49,8 @@ def test(level: Level = typer.Argument(..., help="School level")):
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -109,14 +111,16 @@ def upload(
             importer=PrimaryResultImporter(db_path=db_path,excel_path=excel_path,exam_id=exam_id)
             success=importer.run()
             if success and process_after:
-                processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id, include_necta_total=include_necta)
+                processor=PrimaryProcessor(db_path=db_path,exam_id=exam_id)
                 try:
                     processor.complete_exam()
                 except Exception as e:
                     console.print(f"[red]ERROR:[/] Processing failed: {e}")
-                    import time
-                    time.sleep(2)  # Brief pause to let user see the error
-                    input("Press Enter to continue or Ctrl+C to exit...")
+                    import traceback
+                    console.print(f"[red]Traceback:[/]")
+                    console.print(traceback.format_exc())
+                    console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+                    input()
                     raise  # Re-raise the exception
         else:
             console.print(f"[yellow]upload not implemented for {level}[/]")
@@ -125,6 +129,8 @@ def upload(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -164,6 +170,8 @@ def import_(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -207,6 +215,8 @@ def export(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -271,9 +281,11 @@ def process(
                 console.print("[green]PROCESSING COMPLETE[/]")
             except Exception as e:
                 console.print(f"[red]ERROR:[/] Processing failed: {e}")
-                import time
-                time.sleep(2)  # Brief pause to let user see the error
-                input("Press Enter to continue or Ctrl+C to exit...")
+                import traceback
+                console.print(f"[red]Traceback:[/]")
+                console.print(traceback.format_exc())
+                console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+                input()
                 raise  # Re-raise the exception
         else:
             console.print(f"[yellow]process not implemented for {level}[/]")
@@ -284,6 +296,8 @@ def process(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -320,6 +334,8 @@ def run(file_path: str, args: List[str] = typer.Argument(None)):
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -345,6 +361,8 @@ def python(args: List[str] = typer.Argument(None)):
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -370,6 +388,8 @@ def pip(args: List[str] = typer.Argument(None)):
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
@@ -419,13 +439,15 @@ def future_from_antique(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
 
 
-@app.command("sendsms")
-def bulk_sms(
+@app.command()
+def sendsms(
     level: Level = typer.Argument(..., help="School level"),
     excel_path: str = typer.Option(None, "--excel", "-e", help="Path to Excel file with SMS data (optional - can be loaded from menu)"),
     delay_min: int = typer.Option(5, "--delay-min", "-min", help="Minimum delay between messages (seconds)"),
@@ -451,10 +473,11 @@ def bulk_sms(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()
-
 
 
 @app.command("combine")
@@ -524,6 +547,8 @@ def combine(
         import traceback
         console.print(f"[red]Traceback:[/]")
         console.print(traceback.format_exc())
+        console.print(f"\n[yellow]Press Enter to exit...[/yellow]")
+        input()
         raise typer.Exit(1)
     finally:
         print_footer()

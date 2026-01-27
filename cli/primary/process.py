@@ -25,13 +25,14 @@ class ExamProcessor:
     Main class for processing exam results
     """
    
-    def __init__(self, db_path: str, exam_id: str,include_necta_total: bool = False):
+    def __init__(self, db_path: str, exam_id: str, include_necta_total: bool = False):
         """
-        Initialize with database path and exam ID
-       
+        Initialize ExamProcessor.
+        
         Args:
-            db_path: Path to MS Access database
-            exam_id: Exam identifier to process
+            db_path: Path to the Access database
+            exam_id: Exam ID to process
+            include_necta_total: Whether to include NECTA total calculations
         """
         self.db_path = db_path
         self.exam_id = exam_id
@@ -40,7 +41,10 @@ class ExamProcessor:
             r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
             f'DBQ={db_path};'
         )
-       
+        
+        # Derive academic year from exam start date
+        self.academic_year = self._get_academic_year_from_exam()
+        
         # Display header
         self._display_header()
        
@@ -134,6 +138,26 @@ class ExamProcessor:
         """Create database connection"""
         return pyodbc.connect(self.conn_str)
    
+    def _get_academic_year_from_exam(self) -> int:
+        """Get academic year from exam start date"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        query = "SELECT exam_start FROM tbl_pupil_exams WHERE exam_id = ?"
+        cursor.execute(query, (self.exam_id,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        if row and row[0]:
+            # Extract year from exam_start date
+            exam_year = row[0].year
+            console.print(f"[green]✓[/green] Academic year derived from exam: {exam_year}")
+            return exam_year
+        else:
+            console.print(f"[red]❌ Error: Could not find exam start date for exam_id '{self.exam_id}'[/red]")
+            raise ValueError(f"Could not find exam start date for exam_id '{self.exam_id}'")
+    
     def _get_class_from_exam_id(self) -> str:
         """Get class_id from exam_id"""
         conn = self._get_connection()
@@ -249,11 +273,45 @@ class ExamProcessor:
             df = pd.read_sql(query, conn, params=(self.exam_id,))
        
         try:
+            # Load students only from academic_info to avoid duplicates
             student_query = """
-            SELECT pupil_id, first_name, middle_name, surname, sex, section_id
+            SELECT pupil_id, first_name, middle_name, surname, sex, full_name, inactive
             FROM tbl_pupil_academic_info
+            WHERE pupil_id IN (SELECT DISTINCT pupil_id FROM tbl_pupil_exam_results WHERE exam_id = ?)
             """
-            students_df = pd.read_sql(student_query, conn)
+            students_df = pd.read_sql(student_query, conn, params=(self.exam_id,))
+            console.print(f"[blue]📊 LOG:[/blue] Loaded {len(students_df)} student demographic records")
+            
+            # Get enrollment info separately - filter by exam students and academic year
+            exam_pupil_ids = df['pupil_id'].unique().tolist()
+            
+            enrollment_query = """
+            SELECT DISTINCT pupil_id, class_id, section_id
+            FROM tbl_pupil_enrollments 
+            WHERE pupil_id IN (SELECT DISTINCT pupil_id FROM tbl_pupil_exam_results WHERE exam_id = ?)
+            AND academic_year = ?
+            """
+            enrollment_df = pd.read_sql(enrollment_query, conn, params=(self.exam_id, self.academic_year))
+            
+            console.print(f"[blue]📊 LOG:[/blue] Loaded {len(enrollment_df)} enrollment records for academic year {self.academic_year}")
+            
+            # Validate that we found enrollments for all students
+            if len(enrollment_df) == 0:
+                console.print(f"[red]❌ ERROR:[/] No enrollment records found for academic year {self.academic_year}")
+                console.print(f"[yellow]INFO:[/] This might indicate:")
+                console.print(f"   • No enrollments exist for academic year {self.academic_year}")
+                console.print(f"   • Exam start date year doesn't match enrollment academic year")
+                console.print(f"   • Database integrity issue")
+                raise ValueError(f"No enrollment records found for academic year {self.academic_year}")
+            
+            # Check if any students are missing enrollment data
+            missing_enrollments = len(students_df) - len(enrollment_df)
+            if missing_enrollments > 0:
+                console.print(f"[yellow]⚠[/yellow] {missing_enrollments} students missing enrollment data for academic year {self.academic_year}")
+            
+            # Merge enrollment info back to students
+            students_df = students_df.merge(enrollment_df, on='pupil_id', how='left')
+            
         except Exception as e:
             console.print(f"[red]ERROR:[/] Failed to load student data from tbl_pupil_academic_info: {str(e)}")
             console.print("[yellow]INFO:[/] Attempting to continue without student demographic data...")
@@ -272,12 +330,14 @@ class ExamProcessor:
         conn.close()
        
         df = df.merge(students_df, on='pupil_id', how='left')
+        console.print(f"[blue]📊 LOG:[/blue] Merged results with student data - final count: {len(df)}")
        
         # Create full name
         df['full_name'] = df.apply(
             lambda row: f"{row.get('first_name', '')} {row.get('middle_name', '')} {row.get('surname', '')}".strip(),
             axis=1
         )
+        console.print(f"[blue]📊 LOG:[/blue] Full names generated for {df['full_name'].notna().sum()} students")
        
         return df
    
@@ -459,6 +519,9 @@ class ExamProcessor:
             df['out_of'] = (df['subject_count'] > 0).sum()
        
         console.print("[green]✓[/green] Totals and averages calculated")
+        console.print(f"[blue]📊 LOG:[/blue] Students with subject_count > 0: {len(df[df['subject_count'] > 0])}")
+        console.print(f"[blue]📊 LOG:[/blue] Students with total_marks > 0: {len(df[df['total_marks'] > 0])}")
+        console.print(f"[blue]📊 LOG:[/blue] Average total_marks: {df['total_marks'].mean():.2f}")
        
         # Calculate grades
         console.print("\n[yellow]📊 Assigning grades...[/yellow]")
@@ -476,6 +539,8 @@ class ExamProcessor:
             pbar.update(1)
        
         console.print("\n[green]✅ All grades assigned successfully![/green]\n")
+        console.print(f"[blue]📊 LOG:[/blue] Grade assignment completed for {len(self.subject_columns)} subjects")
+        console.print(f"[blue]📊 LOG:[/blue] Students with avg_grade assigned: {df['avg_grade'].notna().sum()}")
         return df
    
     def assign_student_positions(self, results_df: pd.DataFrame) -> pd.DataFrame:
@@ -493,6 +558,7 @@ class ExamProcessor:
         ).astype('float64').round().astype('Int64')
         df.loc[has_results, 'out_of'] = has_results.sum()
         console.print(f"[green]✓[/green] Ranked {has_results.sum()} students overall")
+        console.print(f"[blue]📊 LOG:[/blue] Overall ranking: {has_results.sum()} students ranked out of {len(df)} total")
         
         if 'sex' in df.columns:
             console.print("\n[yellow]👥 Gender-based ranking...[/yellow]")
@@ -508,6 +574,7 @@ class ExamProcessor:
             
             for sex, count in sex_counts.items():
                 console.print(f"[green]✓[/green] Ranked {count} students ({sex})")
+                console.print(f"[blue]📊 LOG:[/blue] Gender ranking ({sex}): {count} students ranked")
         
         if 'section_id' in df.columns:
             console.print("\n[yellow]🎓 Stream-based ranking...[/yellow]")
@@ -523,8 +590,15 @@ class ExamProcessor:
             
             for stream, count in stream_counts.items():
                 console.print(f"[green]✓[/green] Ranked {count} students (Stream: {stream})")
+                console.print(f"[blue]📊 LOG:[/blue] Stream ranking ({stream}): {count} students ranked")
        
         console.print("\n[green]✅ Student positions assigned![/green]\n")
+        console.print(f"[blue]📊 LOG:[/blue] Student position assignment completed")
+        console.print(f"[blue]📊 LOG:[/blue] Students with overall position: {df['pos'].notna().sum()}")
+        if 'pos_sex' in df.columns:
+            console.print(f"[blue]📊 LOG:[/blue] Students with gender position: {df['pos_sex'].notna().sum()}")
+        if 'pos_stream' in df.columns:
+            console.print(f"[blue]📊 LOG:[/blue] Students with stream position: {df['pos_stream'].notna().sum()}")
         return df
    
     def assign_subject_positions(self, results_df: pd.DataFrame) -> pd.DataFrame:
@@ -572,6 +646,11 @@ class ExamProcessor:
                 pbar.update(1)
        
         console.print("\n[green]✅ Subject positions assigned![/green]\n")
+        console.print(f"[blue]📊 LOG:[/blue] Subject position assignment completed for {len(self.subject_columns)} subjects")
+        # Log sample subject position counts
+        sample_subject = self.subject_columns[0] if self.subject_columns else None
+        if sample_subject and f"{sample_subject}_pos" in df.columns:
+            console.print(f"[blue]📊 LOG:[/blue] Students with {sample_subject} position: {df[f'{sample_subject}_pos'].notna().sum()}")
         return df
    
     def create_result_json(self, row: pd.Series) -> str:
@@ -778,8 +857,11 @@ class ExamProcessor:
         conn.close()
        
         console.print(f"\n[green]✅ Database updated: {success_count} records saved successfully![/green]")
+        console.print(f"[blue]📊 LOG:[/blue] Database save operation completed")
+        console.print(f"[blue]📊 LOG:[/blue] Successfully updated: {success_count} records")
         if error_count > 0:
-            console.print(f"[yellow]⚠ {error_count} records had errors[/yellow]\n")
+            console.print(f"[yellow]⚠ {error_count} records had errors[/yellow]")
+            console.print(f"[blue]📊 LOG:[/blue] Failed updates: {error_count} records")
         else:
             console.print()
    
@@ -954,8 +1036,11 @@ class ExamProcessor:
         conn.close()
        
         console.print(f"\n[green]✅ Competency data saved: {saved_count} subjects![/green]")
+        console.print(f"[blue]📊 LOG:[/blue] Competency data processing completed")
+        console.print(f"[blue]📊 LOG:[/blue] Successfully saved: {saved_count} subject records")
         if error_count > 0:
-            console.print(f"[yellow]⚠ {error_count} records had errors[/yellow]\n")
+            console.print(f"[yellow]⚠ {error_count} records had errors[/yellow]")
+            console.print(f"[blue]📊 LOG:[/blue] Failed competency saves: {error_count} records")
         else:
             console.print()
        
@@ -1143,6 +1228,16 @@ class ExamProcessor:
             console.print("\n[cyan]📂 Loading exam results from database...[/cyan]")
             df = self._load_results()
             console.print(f"[green]✓[/green] Loaded [bold]{len(df)}[/bold] student records\n")
+            console.print(f"[blue]📊 LOG:[/blue] Total students loaded: {len(df)}")
+            console.print(f"[blue]📊 LOG:[/blue] Students with results: {len(df[df['subject_count'] > 0])}")
+            console.print(f"[blue]📊 LOG:[/blue] Students without results: {len(df[df['subject_count'] == 0])}")
+            if 'sex' in df.columns:
+                console.print(f"[blue]📊 LOG:[/blue] Male students: {(df['sex'] == 'M').sum()}")
+                console.print(f"[blue]📊 LOG:[/blue] Female students: {(df['sex'] == 'F').sum()}")
+            if 'section_id' in df.columns:
+                streams = df['section_id'].value_counts()
+                for stream, count in streams.items():
+                    console.print(f"[blue]📊 LOG:[/blue] Stream {stream}: {count} students")
                 
             # Display data preview
             self._display_data_preview(df)
@@ -1170,6 +1265,8 @@ class ExamProcessor:
             )
                 
             console.print("\n[green]JSON records generated![/green]\n")
+            console.print(f"[blue]📊 LOG:[/blue] JSON generation completed for {len(df)} students")
+            console.print(f"[blue]📊 LOG:[/blue] Students with result_json: {df['result_json'].notna().sum()}")
                 
             # Step 4.5: Generate NECTA results string
             console.print("="*80)
@@ -1182,6 +1279,8 @@ class ExamProcessor:
             df['necta_results'] = df.progress_apply(self.create_necta_results, axis=1)
                 
             console.print("[green]NECTA strings generated perfectly![/green]\n")
+            console.print(f"[blue]📊 LOG:[/blue] NECTA results generation completed for {len(df)} students")
+            console.print(f"[blue]📊 LOG:[/blue] Students with necta_results: {df['necta_results'].notna().sum()}")
                 
             # Show one sample
             sample = df.iloc[0]

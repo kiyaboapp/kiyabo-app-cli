@@ -109,9 +109,9 @@ class AlevelProcessor:
             if self.exam_id and len(self.exam_id) >= 4:
                 if 'VI' in self.exam_id.upper():
                     return 'VI'
-                elif self.exam_id[3:4] == '6':  # Form VI pattern
+                elif self.exam_id[4:4] == '6':  # Form VI pattern
                     return 'VI'
-                elif self.exam_id[3:4] == '5':  # Form V pattern
+                elif self.exam_id[4:4] == '5':  # Form V pattern
                     return 'V'
             return ""
     

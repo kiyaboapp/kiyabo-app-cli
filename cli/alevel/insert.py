@@ -75,7 +75,12 @@ class AlevelStudentImporter:
     def esc(s): return str(s).strip().replace("'", "''") if s else ""
 
     @staticmethod
-    def phone(s): return re.sub(r"\D", "", str(s))[-9:].zfill(9)
+    def phone(s): 
+        if pd.isna(s) or str(s).strip() == "":
+            return None
+        digits = re.sub(r"\D", "", str(s))
+        cleaned_digits = digits[-9:] if len(digits) > 9 else digits
+        return f"+255{cleaned_digits}" if cleaned_digits else None
 
     def name_exists(self, f, m, s):
         self.cur.execute("SELECT 1 FROM [tbl_student_academic_info] WHERE first_name=? AND middle_name=? AND surname=?", (f, m, s))

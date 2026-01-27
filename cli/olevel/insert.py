@@ -61,9 +61,11 @@ class OlevelStudentImporter:
 
     @staticmethod
     def clean_phone(phone) -> str:
-        if pd.isna(phone): return ""
+        if pd.isna(phone) or str(phone).strip() == "":
+            return None
         digits = re.sub(r"\D", "", str(phone))
-        return digits[-9:] if len(digits) > 9 else digits
+        cleaned_digits = digits[-9:] if len(digits) > 9 else digits
+        return f"+255{cleaned_digits}" if cleaned_digits else None
 
     def name_exists(self, cur, first, middle, surname) -> bool:
         if not all([first, middle, surname]): return False
