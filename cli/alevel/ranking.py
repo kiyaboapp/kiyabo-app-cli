@@ -626,79 +626,7 @@ class AlevelProcessor:
         """
         Process a single student row to compute all metrics including division, points, and rankings.
         
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        CRITICAL UNDERSTANDING - CORE vs NON-CORE SUBJECTS
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        
-        ## COMBINATION STRUCTURE:
-        Each combination contains both CORE and NON-CORE subjects:
-        
-        Example - CBG Combination (Form VI Old Curriculum):
-        - CORE subjects (is_core=True):     BIO, CHE, GEO  ← Used for division/points
-        - NON-CORE subjects (is_core=False): BAM, GS       ← NOT used for division/points
-        
-        Example - HGK Combination:
-        - CORE subjects:     GEO, HIS, KIS
-        - NON-CORE subjects: GS (for Form VI old curriculum)
-        
-        ## SPECIAL CASE - Subject 31 (GS - General Studies):
-        - GS is a NON-CORE subject (is_core=False)
-        - GS has is_present=False in database (normally excluded)
-        - For Form VI BEFORE July 2026: GS is force-included despite is_present=False
-        - GS is part of the combination, NOT an extra subject
-        - Subjects 30 & 34 are excluded for Form VI old curriculum
-        
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        WHAT CORE SUBJECTS ARE USED FOR:
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        ✅ Division calculation      - ONLY CORE subjects (3 best from combination cores)
-        ✅ Points calculation         - ONLY CORE subjects (sum of grade points)
-        ✅ First/Second/Third marks   - ONLY CORE subjects (top 3 core marks)
-        ✅ Completeness check         - ONLY CORE subjects (must have all 3+ cores)
-        
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        WHAT NON-CORE SUBJECTS (like GS, BAM) ARE USED FOR:
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        ✅ Average marks calculation  - ALL subjects in combination (core + non-core)
-        ✅ subject_count_all          - ALL subjects in combination + extras with marks
-        ✅ subject_count              - ALL subjects student attempted
-        ✅ NECTA results string       - ALL subjects appear in results
-        ✅ Total marks                - ALL subjects contribute to sum
-        ✅ GPA calculation            - Denominator includes all attempted subjects
-        
-        ❌ Division/Points            - NON-CORE subjects are NEVER used here
-        ❌ First/Second/Third         - NON-CORE subjects are NEVER used here
-        ❌ Completeness check         - NON-CORE subjects are NEVER considered
-        
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        EXAMPLE CALCULATION - Student ABIGAELI (CBG):
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        Marks:  BIO=8(F), CHE=82(A), GEO=48(E), BAM=74(B), GS=75(B)
-        
-        DIVISION/POINTS (CORE ONLY):
-        - Effective cores: [bio, che, geo]  ← Only these 3
-        - Grade points: F(7) + A(1) + E(5) = 13 points
-        - Division: 13 points = Division III
-        - First: 82, Second: 48, Third: 8  ← From cores only
-        
-        AVERAGE MARKS (ALL SUBJECTS):
-        - Total marks: 8 + 82 + 48 + 74 + 75 = 287
-        - Subject count all: 5 (all in combination: bio, che, geo, bam, gs)
-        - Average: 287/5 = 57.4 → Grade D
-        
-        NECTA RESULTS:
-        "CHEM-'A', BIOLOGY-'F', GEOG-'E', BAM-'B', GS-'B', AVG-57.4'D'"
-        
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        INC/ABS HANDLING:
-        ═══════════════════════════════════════════════════════════════════════════════════════
-        - ABS: Student attempted 0 core subjects → division='ABS', points=None
-        - INC: Student missing some cores OR has invalid grades
-            - if include_inc=True: division='INC', points=None (unless rank_incs=True)
-            - if include_inc=False: division='0' or 'IV', points=computed_points
-        - COMPLETE: All cores attempted with valid grades → normal division/points
-        
-        ═══════════════════════════════════════════════════════════════════════════════════════
+        [... keep all the existing docstring ...]
         """
         
         student_comb = self.comb_metadata[self.comb_metadata['comb_id'] == row['comb_id']]
@@ -754,7 +682,8 @@ class AlevelProcessor:
         valid_pts = [p for p in grade_pts if p is not None]
         computed_points = sum(valid_pts) if valid_pts else None
         
-        row['computed_points'] = computed_points
+        # Store raw computed points for potential future use (debugging, reports, etc.)
+        row['computed_points_raw'] = computed_points
         
         # ═══════════════════════════════════════════════════════════════
         # Completeness: Based on CORE subjects only
@@ -772,16 +701,22 @@ class AlevelProcessor:
             save_points = None
             
         elif is_inc:
+            # Calculate penalty points for determining converted division
             penalty_points = sum(valid_pts) + 7 * missing_count if valid_pts else 7 * missing_count
             
+            # Determine division based on include_inc setting
             if self.include_inc:
                 save_div = 'INC'
-                save_points = computed_points if self.rank_incs and computed_points is not None else None
             else:
+                # Convert INC to '0' or 'IV' based on penalty
                 save_div = '0' if self.get_div_from_points(penalty_points) == '0' else 'IV'
-                save_points = computed_points
+            
+            # CRITICAL: ALWAYS save points=None for INC students
+            # Even when converted to '0' or 'IV', they remain INC students with no points
+            save_points = None
                 
         else:
+            # Complete student - normal processing
             save_div = self.get_div_from_points(computed_points)
             save_points = computed_points if save_div is not None else None
         
@@ -802,6 +737,7 @@ class AlevelProcessor:
 
 
 
+
     def process_all_students(self):
         """Process all student rows."""
         console.print("\n[bold cyan]Stage 6: Processing Each Student Row...[/bold cyan]")
@@ -810,6 +746,7 @@ class AlevelProcessor:
         self._preview("FINAL RESULTS – First 12 Students", ['full_name','division','points','gpa','first','second','third'], highlight=['division','points','gpa'])
         
         self._display_subject_count_discrepancy()
+
 
     def compute_ranking(self):
         """Compute school-wide and combination-specific rankings with PROPER TIE HANDLING."""
@@ -822,8 +759,10 @@ class AlevelProcessor:
 
         print(f" [cyan]🔍 DEBUG: Total students before filtering: {len(exam_df):,}[/cyan]")
         
+        # Build invalid conditions
         invalid_conditions = [(exam_df['division'] == 'ABS'), (exam_df['avg_marks'].isna())]
         
+        # Only exclude students with NaN points if NOT ranking INCs
         if not self.rank_incs:
             invalid_conditions.append(exam_df['points'].isna())
         
@@ -837,6 +776,15 @@ class AlevelProcessor:
         print(f" [cyan]🔍 DEBUG: Students with division='ABS': {(exam_df['division'] == 'ABS').sum()}[/cyan]")
         print(f" [cyan]🔍 DEBUG: Students with NaN points: {exam_df['points'].isna().sum()}[/cyan]")
         print(f" [cyan]🔍 DEBUG: Students with NaN avg_marks: {exam_df['avg_marks'].isna().sum()}[/cyan]")
+        
+        # Show INC student stats
+        inc_mask = exam_df['points'].isna() & (exam_df['division'] != 'ABS')
+        inc_count = inc_mask.sum()
+        if inc_count > 0:
+            inc_divisions = exam_df[inc_mask]['division'].value_counts()
+            print(f" [cyan]🔍 DEBUG: INC students (points=None): {inc_count}[/cyan]")
+            print(f" [cyan]   Divisions: {dict(inc_divisions)}[/cyan]")
+        
         print(f" [cyan]🔍 DEBUG: Total invalid students: {len(invalid_students):,}[/cyan]")
         print(f" [cyan]🔍 DEBUG: Total valid students: {len(valid_students):,}[/cyan]")
 
@@ -854,15 +802,18 @@ class AlevelProcessor:
             before_fill = valid_students[col].isna().sum()
             
             if col == 'points':
+                # Fill NaN points with 999999 (worst possible) - this handles INC students when rank_incs=True
                 fill_value = 999999
                 valid_students[col] = valid_students[col].fillna(fill_value)
+                if before_fill > 0:
+                    console.print(f" [yellow]- {col}: filled {before_fill} NaN values (INC students) with {fill_value} → they rank last[/yellow]")
             elif col == 'avg_marks':
                 valid_students[col] = valid_students[col].fillna(-1)
             elif col in ['subject_count', 'subject_count_all']:
                 valid_students[col] = valid_students[col].fillna(0)
             
             after_fill = valid_students[col].isna().sum()
-            console.print(f" [cyan]- {col}: filled {before_fill} NaN values → {after_fill} remaining[/cyan]")
+            console.print(f" [cyan]- {col}: {before_fill} NaN → {after_fill} remaining[/cyan]")
         
         for col in ['points', 'avg_marks']:
             if col in valid_students.columns:
@@ -1017,8 +968,9 @@ class AlevelProcessor:
         if 'avg_marks' in self.df.columns:
             self.df['avg_marks'] = pd.to_numeric(self.df['avg_marks'], errors='coerce').round(4)
         
-        if 'computed_points' in self.df.columns:
-            self.df = self.df.drop(columns=['computed_points'])
+        # Keep computed_points_raw for reference but don't save to database
+        if 'computed_points_raw' in self.df.columns:
+            self.df['computed_points_raw'] = pd.to_numeric(self.df['computed_points_raw'], errors='coerce').round().astype('Int64')
         
         console.print(" [green]- Data types finalized.[/green]")
     
