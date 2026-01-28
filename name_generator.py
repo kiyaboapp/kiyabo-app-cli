@@ -199,9 +199,9 @@ def main():
     parser.add_argument('-c', '--count', type=int, default=100,
                         help='Number of names to generate (default: 100)')
     
-    parser.add_argument('-l', '--locale', type=str, default='en_US',
+    parser.add_argument('-l', '--locale', type=str, default='sw',
                         choices=['en_US', 'sw', 'ke', 'tz'],
-                        help='Locale for name generation (en_US, sw, ke, tz) (default: en_US)')
+                        help='Locale for name generation (en_US, sw, ke, tz) (default: sw)')
     
     parser.add_argument('-s', '--sex', type=str, choices=['M', 'F'],
                         help='Sex for generated names (M or F). If not specified, names will be random')
