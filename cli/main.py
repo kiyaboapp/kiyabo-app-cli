@@ -65,6 +65,7 @@ def upload(
     sort_columns: str = typer.Option(None, "--sort-cols", help="Columns to sort by (comma-separated)"),
     include_inc: bool = typer.Option(True, "--inc/--no-inc", help="Include incomplete students in processing"),
     rank_incs: bool = typer.Option(False, "--rank-incs/--no-rank-incs", help="Include incomplete students in ranking"),
+    flat_rate: bool = typer.Option(False, "--flat/--no-flat", help="Use flat rate for O-Level processing"),
     ranking_method: str = typer.Option("min", "--ranking-method", help="Ranking method: min, max, average, dense, first (applies to both O-Level and A-Level)")
     ):
     print_banner()
@@ -98,7 +99,7 @@ def upload(
                     db_path=db_path,
                     sort_columns=sort_cols_list,
                     include_inc=include_inc,
-                    flat_rate=False,  # Default value, could be made configurable if needed
+                    flat_rate=flat_rate,
                     rank_incs=rank_incs,
                     base_subjects=7,  # Default value, could be made configurable if needed
                     update_competency=True,  # Default value, could be made configurable if needed
@@ -419,7 +420,6 @@ def future_from_antique(
         if level.lower() in ["olevel", "alevel"]:
             kwargs['include_inc'] = include_inc
             kwargs['rank_incs'] = rank_incs
-            kwargs['rank_method'] = ranking_method  # Use same parameter name for A-Level
             
             if sort_cols:
                 kwargs['sort_columns'] = [col.strip() for col in sort_cols.split(",")]
@@ -427,7 +427,9 @@ def future_from_antique(
             if level.lower() == "olevel":
                 kwargs['flat_rate'] = flat_rate
                 kwargs['update_competency'] = update_competency
-                kwargs['ranking_method'] = ranking_method  # Use original name for O-Level
+                kwargs['ranking_method'] = ranking_method  # O-Level uses ranking_method
+            elif level.lower() == "alevel":
+                kwargs['rank_method'] = ranking_method  # A-Level uses rank_method
         
         if level.lower() == "primary":
             kwargs['include_necta_total'] = include_necta_total

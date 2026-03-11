@@ -367,7 +367,7 @@ class OlevelProcessor:
             
             # Assign division based on points
             if points <= 17: return points, 'I'
-            if points <= 22: return points, 'II'
+            if points <= 21: return points, 'II'
             if points <= 25: return points, 'III'
             if points <= 33: return points, 'IV'
             return points, '0'

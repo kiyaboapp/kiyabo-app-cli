@@ -255,7 +255,7 @@ class DualTableProcessor:
                     return None, '0' if potential_points >= 34 else 'IV'
             
             if points <= 17: return points, 'I'
-            if points <= 22: return points, 'II'
+            if points <= 21: return points, 'II'
             if points <= 25: return points, 'III'
             if points <= 33: return points, 'IV'
             return points, '0'
