@@ -1085,7 +1085,7 @@ class AlevelProcessor:
             if sat.empty: continue
 
             c = sat[f"{sub}_grade"].value_counts()
-            A,B,C,D,E,S,F = [int(c.get(g,0)) for g in "ABCDEFS"]
+            A,B,C,D,E,S,F = [int(c.get(g,0)) for g in "ABCDESF"]
             total = len(sat)
             gpa = (A*1+B*2+C*3+D*4+E*5+S*6+F*7) / total
             level = self.get_competency_level(gpa)
